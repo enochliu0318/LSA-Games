@@ -69,14 +69,14 @@ button.pri{background:var(--ink);border-color:var(--ink);color:#fff}
 button.pri:hover{background:var(--volt);border-color:var(--ink);color:var(--ink)}
 @media(prefers-color-scheme:dark){button.pri{background:var(--volt);border-color:var(--volt);color:var(--ink)}button.pri:hover{background:#fff;border-color:#fff}}
 button.bad{color:var(--bad)}button.bad:hover{border-color:var(--bad);color:var(--bad)}
-button.sm,.btn.sm{padding:2px 10px;font-size:13px}
-input,select,textarea{font:inherit;color:var(--tx);background:var(--card);border:1.5px solid var(--field);border-radius:4px;padding:6px 10px;max-width:100%}
-input[type=checkbox]{accent-color:var(--ink);width:16px;height:16px;vertical-align:-3px}
 .evbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 12px;margin-bottom:8px;background:var(--row);border-left:4px solid var(--line,#999)}
 .evbar.on{border-left-color:var(--volt);background:color-mix(in srgb,var(--volt) 16%,var(--row))}
 .evf select,.evf input{min-width:0}
 tr.sel td{background:color-mix(in srgb,var(--volt) 14%,transparent)}
 .tw input[type=checkbox]{width:16px;height:16px}
+button.sm,.btn.sm{padding:2px 10px;font-size:13px}
+input,select,textarea{font:inherit;color:var(--tx);background:var(--card);border:1.5px solid var(--field);border-radius:4px;padding:6px 10px;max-width:100%}
+input[type=checkbox]{accent-color:var(--ink);width:16px;height:16px;vertical-align:-3px}
 @media(prefers-color-scheme:dark){input[type=checkbox]{accent-color:var(--volt)}}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--tx);box-shadow:0 0 0 3px var(--volt)}
 table{border-collapse:collapse;width:100%}
@@ -237,6 +237,8 @@ body.tv .tvx:hover{opacity:1;background:var(--volt);color:var(--ink)}
   #rt select{padding:5px 4px;font-size:14px}
   .val{width:84px;font-size:20px}
 }
+button.pri .chip{background:rgba(255,255,255,.2);color:#fff;margin-left:4px}
+button.pri .chip.running{background:var(--volt);color:var(--ink)}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -282,7 +284,7 @@ async function api(path, method = 'GET', body) {
   return j;
 }
 function toast(msg, bad) { const t = $('#toast'); t.textContent = msg; t.className = bad ? 'bad' : ''; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', bad ? 4200 : 2200); }
-async function run(fn) { try { return await fn(); } catch (e) { if (e.status === 403) { toast(e.message, true); openLogin(); } else toast(e.message, true); } }
+async function run(fn) { try { return await fn(); } catch (e) { if (e.status === 403 && !ME) { toast(e.message, true); openLogin(); } else toast(e.message, true); } }
 
 function modal(title, html, wide) {
   closeModal();
@@ -293,10 +295,12 @@ function modal(title, html, wide) {
 }
 function closeModal() { $('#modal')?.remove(); }
 const isAdmin = () => ME === 'admin', canRec = () => !!ME;
+const mayRec = id => ME === 'admin' || (ME === 'recorder' && (INFO.my_events || []).includes(+id));
+const evLabel = e => e.name + (e.grp || '');
 const dt = s => s ? s.slice(5, 16) : '';
 const toLocal = s => s ? s.replace(' ', 'T') : '';
 const fromLocal = s => s ? s.replace('T', ' ') : '';
-const needAdminHint = () => isAdmin() ? '' : `<div class="hint">当前为只读。需要修改数据请 <a href="#" data-act="login">登录</a>(管理员)。</div>`;
+const needAdminHint = () => isAdmin() ? '' : (ME === 'recorder' ? `<div class="hint">你是录入员,只能在自己负责的项目里录入成绩;其他内容只读。</div>` : `<div class="hint">当前为只读。需要修改数据请 <a href="#" data-act="login">登录</a>(管理员)。</div>`);
 
 /* ============ 全局事件 ============ */
 const ACT = {};
@@ -308,11 +312,11 @@ document.addEventListener('click', e => {
 
 /* ============ 登录 ============ */
 function openLogin() {
-  const m = modal('登录', `<div class="f"><label>密码</label><input type="password" id="pw" autofocus></div>
-  <p class="mut sm">管理员:可编辑所有数据。录入员:仅可录入成绩、变更项目状态。</p>
+  modal('登录', `<div class="f"><label>账号</label><input id="un" autocomplete="username" placeholder="管理员填 admin(或留空)"><label>密码</label><input type="password" id="pw" autocomplete="current-password"></div>
+  <p class="mut sm">管理员可编辑所有数据。录入员使用管理员分配的账号,只能录入自己负责项目的成绩。</p>
   <div class="row"><button class="pri" id="doLogin">登录</button><button onclick="closeModal()">取消</button></div>`);
-  const go = () => run(async () => { const r = await api('/api/login', 'POST', { password: $('#pw').value }); ME = r.role; closeModal(); toast('已登录:' + (ME === 'admin' ? '管理员' : '录入员')); await boot(true); });
-  $('#doLogin').onclick = go; $('#pw').onkeydown = e => { if (e.key === 'Enter') go(); }; setTimeout(() => $('#pw')?.focus(), 50);
+  const go = () => run(async () => { const r = await api('/api/login', 'POST', { username: $('#un').value, password: $('#pw').value }); ME = r.role; closeModal(); toast('已登录:' + (r.name || r.user)); await boot(true); if (ME === 'recorder') location.hash = '#/events'; });
+  $('#doLogin').onclick = go; ['un', 'pw'].forEach(id => $('#' + id).onkeydown = e => { if (e.key === 'Enter') go(); }); setTimeout(() => $('#un')?.focus(), 50);
 }
 ACT.login = openLogin;
 $('#loginBtn').onclick = () => ME ? run(async () => { await api('/api/logout', 'POST'); ME = null; await boot(true); toast('已退出'); }) : openLogin();
@@ -335,7 +339,7 @@ async function render() {
 window.addEventListener('hashchange', () => { closeModal(); render(); });
 async function boot(rerender) {
   INFO = await api('/api/info'); ME = INFO.role; document.title = INFO.meet_name; $('#title').innerHTML = brandHTML(INFO.meet_name);
-  $('#who').textContent = ME === 'admin' ? '管理员' : ME === 'recorder' ? '录入员' : '游客'; $('#loginBtn').textContent = ME ? '退出' : '登录';
+  $('#who').textContent = ME === 'admin' ? '管理员' : ME === 'recorder' ? ('录入员·' + (INFO.name || INFO.user)) : '游客'; $('#loginBtn').textContent = ME ? '退出' : '登录';
   if (rerender !== false) await render();
 }
 let lastV = null;
@@ -410,15 +414,119 @@ async function pageSchedule() {
 }
 
 /* ============ 项目列表 ============ */
+const EVSEL = new Set(), EVF = { q: '', kind: '', gender: '', status: '', venue: '', grp: '', sort: '' };
+let EVS = [], EVLAST = null, EVMINE = [];
+const evSorted = () => {
+  if (EVF.sort === 'time') return [...EVS].sort((a, b) => (a.start_time || '9').localeCompare(b.start_time || '9'));
+  if (EVF.sort === 'name') return [...EVS].sort((a, b) => (a.name + a.grp).localeCompare(b.name + b.grp, 'zh'));
+  return EVS;
+};
+const evFiltered = () => {
+  const f = EVF, q = f.q.trim().toLowerCase();
+  return evSorted().filter(e => (!q || (e.name + (e.grp || '') + (e.venue || '')).toLowerCase().includes(q)) && (!f.kind || e.kind === f.kind) && (!f.gender || e.gender === f.gender)
+    && (!f.status || e.status === f.status) && (!f.venue || (e.venue || '') === (f.venue === '-' ? '' : f.venue)) && (!f.grp || (e.grp || '') === (f.grp === '-' ? '' : f.grp)));
+};
+const evSelIds = () => evSorted().filter(e => EVSEL.has(e.id)).map(e => e.id);   // 按显示顺序
 async function pageEvents() {
-  const evs = await api('/api/events');
-  $('#app').innerHTML = needAdminHint() + `<div class="card"><div class="row" style="margin-bottom:10px"><h2 class="grow" style="margin:0">项目管理(${evs.length})</h2>
-  ${isAdmin() ? `<button data-act="presets">+ 一键添加常用项目</button><button class="pri" data-act="evForm">+ 新建项目</button>` : ''}</div>
-  <div class="tw"><table><tr><th>项目</th><th>类型</th><th>性别</th><th>开始</th><th>场地</th><th>道数</th><th>报名</th><th>状态</th><th></th></tr>
-  ${evs.map(e => `<tr><td><a href="#/event/${e.id}"><b>${esc(e.name)}${esc(e.grp || '')}</b></a>${e.scored ? '' : ' <span class="chip">不计分</span>'}</td><td>${KIND[e.kind]}</td><td>${GEN[e.gender]}</td>
-  <td>${dt(e.start_time) || '—'}</td><td>${esc(e.venue || '')}</td><td>${e.kind === 'field' ? '—' : e.lanes}</td><td>${e.n_entries}</td><td><span class="chip ${e.status}">${STAT[e.status]}</span></td>
-  <td>${isAdmin() ? `<button class="sm" data-act="evForm" data-id="${e.id}">编辑</button>` : ''}</td></tr>`).join('') || '<tr><td colspan=9 class="mut">暂无项目</td></tr>'}</table></div></div>`;
+  EVS = await api('/api/events');
+  const have = new Set(EVS.map(e => e.id)); [...EVSEL].forEach(i => have.has(i) || EVSEL.delete(i));
+  const mineIds = ME === 'recorder' ? (INFO.my_events || []) : [], mine = EVS.filter(e => mineIds.includes(e.id)); EVMINE = mineIds;
+  const opt = (arr, cur, blank) => `<option value="">${blank}</option>` + arr.map(v => `<option value="${esc(v)}" ${cur === v ? 'selected' : ''}>${esc(v === '-' ? '(无)' : v)}</option>`).join('');
+  const venues = [...new Set(EVS.map(e => e.venue || '-'))], grps = [...new Set(EVS.map(e => e.grp || '-'))];
+  $('#app').innerHTML = needAdminHint() + (ME === 'recorder' ? `<div class="card"><h2>我负责的项目(${mine.length})</h2>${mine.length ? `<div class="row">${mine.map(e => `<button class="pri" data-act="goEvent" data-id="${e.id}">${esc(evLabel(e))}<span class="chip ${e.status}">${STAT[e.status]}</span></button>`).join('')}</div>` : '<p class="mut" style="margin:0">管理员还没有给你分配项目,请联系管理员。</p>'}</div>` : '') +
+  `<div class="card"><div class="row" style="margin-bottom:10px"><h2 class="grow" style="margin:0">项目管理(<span id="evcnt"></span>)</h2>
+  ${isAdmin() ? `<button data-act="presets">+ 常用项目</button><button class="pri" data-act="evForm">+ 新建项目</button>` : ''}</div>
+  <div class="row evf" style="margin-bottom:10px">
+    <input id="evq" placeholder="搜索 项目 / 组别 / 场地" value="${esc(EVF.q)}" style="min-width:160px">
+    <select id="evk"><option value="">全部类型</option>${Object.entries(KIND).map(([k, v]) => `<option value="${k}" ${EVF.kind === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+    <select id="evg"><option value="">全部性别</option>${['M', 'F', 'X'].map(k => `<option value="${k}" ${EVF.gender === k ? 'selected' : ''}>${GEN[k]}</option>`).join('')}</select>
+    <select id="evs"><option value="">全部状态</option>${Object.entries(STAT).map(([k, v]) => `<option value="${k}" ${EVF.status === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+    <select id="evv">${opt(venues, EVF.venue, '全部场地')}</select>
+    <select id="evp">${opt(grps, EVF.grp, '全部组别')}</select>
+    <select id="evo"><option value="">默认顺序</option><option value="time" ${EVF.sort === 'time' ? 'selected' : ''}>按开始时间</option><option value="name" ${EVF.sort === 'name' ? 'selected' : ''}>按名称</option></select>
+    <a href="#" data-act="evClearF" class="sm">清除筛选</a></div>
+  <div id="evbar"></div><div class="tw" id="evtbl"></div></div>`;
+  const bind = (id, k, ev) => { $(id)[ev || 'onchange'] = e => { EVF[k] = e.target.value; drawEv(); }; };
+  bind('#evq', 'q', 'oninput'); bind('#evk', 'kind'); bind('#evg', 'gender'); bind('#evs', 'status'); bind('#evv', 'venue'); bind('#evp', 'grp'); bind('#evo', 'sort');
+  drawEv();
 }
+function drawEv() {
+  const list = evFiltered(), adm = isAdmin(), mineIds = EVMINE;
+  $('#evcnt').textContent = list.length === EVS.length ? EVS.length : list.length + ' / ' + EVS.length;
+  const nSel = EVSEL.size, allOn = list.length && list.every(e => EVSEL.has(e.id));
+  $('#evbar').innerHTML = adm ? `<div class="evbar ${nSel ? 'on' : ''}"><span class="grow"><b>${nSel ? '已选 ' + nSel + ' 项' : '勾选项目后可批量操作'}</b>
+    <a href="#" data-act="evSelAll" class="sm" style="margin-left:10px">全选当前${list.length}项</a><a href="#" data-act="evSelInv" class="sm" style="margin-left:10px">反选</a>${nSel ? '<a href="#" data-act="evSelNone" class="sm" style="margin-left:10px">取消选择</a>' : ''}</span>
+    ${nSel ? `<button data-act="evBulkEdit">批量修改</button><button data-act="evSched">排时间</button><button data-act="evShift">整体平移</button><button data-act="evHeats">生成分组</button><button class="bad" data-act="evBulkDel">删除</button>` : ''}</div>` : '';
+  $('#evtbl').innerHTML = `<table><tr>${adm ? `<th style="width:34px"><input type="checkbox" id="evall" ${allOn ? 'checked' : ''}></th>` : ''}<th>项目</th><th>类型</th><th>性别</th><th>开始</th><th>场地</th><th>道数</th><th>报名</th><th>状态</th><th></th></tr>
+  ${list.map(e => `<tr class="${EVSEL.has(e.id) ? 'sel' : ''}">${adm ? `<td><input type="checkbox" class="evc" value="${e.id}" ${EVSEL.has(e.id) ? 'checked' : ''}></td>` : ''}<td><a href="#/event/${e.id}"><b>${esc(e.name)}${esc(e.grp || '')}</b></a>${e.scored ? '' : ' <span class="chip">不计分</span>'}${mineIds.includes(e.id) ? ' <span class="chip" style="background:var(--volt);color:var(--ink)">我负责</span>' : ''}</td><td>${KIND[e.kind]}</td><td>${GEN[e.gender]}</td>
+  <td>${dt(e.start_time) || '—'}</td><td>${esc(e.venue || '')}</td><td>${e.kind === 'field' ? '—' : e.lanes}</td><td>${e.n_entries}</td><td><span class="chip ${e.status}">${STAT[e.status]}</span></td>
+  <td>${adm ? `<button class="sm" data-act="evForm" data-id="${e.id}">编辑</button>` : ''}</td></tr>`).join('') || `<tr><td colspan=10 class="mut">${EVS.length ? '没有符合条件的项目' : '暂无项目。可点击「+ 常用项目」,或在「人员」页导入含“项目”列的名单自动创建。'}</td></tr>`}</table>`;
+  if (!adm) return;
+  const all = $('#evall'); if (all) all.onchange = () => { list.forEach(e => all.checked ? EVSEL.add(e.id) : EVSEL.delete(e.id)); drawEv(); };
+  document.querySelectorAll('.evc').forEach(c => c.onclick = ev => {
+    const id = +c.value, ids = list.map(e => e.id);
+    if (ev.shiftKey && EVLAST != null && ids.includes(EVLAST)) {       // Shift 连选
+      const a = ids.indexOf(EVLAST), b = ids.indexOf(id); ids.slice(Math.min(a, b), Math.max(a, b) + 1).forEach(i => c.checked ? EVSEL.add(i) : EVSEL.delete(i));
+    } else c.checked ? EVSEL.add(id) : EVSEL.delete(id);
+    EVLAST = id; drawEv(); });
+}
+ACT.evClearF = () => { Object.keys(EVF).forEach(k => EVF[k] = ''); render(); };
+ACT.evSelAll = () => { evFiltered().forEach(e => EVSEL.add(e.id)); drawEv(); };
+ACT.evSelInv = () => { evFiltered().forEach(e => EVSEL.has(e.id) ? EVSEL.delete(e.id) : EVSEL.add(e.id)); drawEv(); };
+ACT.evSelNone = () => { EVSEL.clear(); drawEv(); };
+const evNames = ids => { const m = EVS.filter(e => ids.includes(e.id)).map(e => e.name + (e.grp || '')); return m.slice(0, 6).map(esc).join('、') + (m.length > 6 ? ` 等 ${m.length} 项` : ''); };
+ACT.evBulkEdit = () => {
+  const ids = evSelIds();
+  modal(`批量修改(${ids.length} 项)`, `<p class="sm mut" style="margin-top:0">${evNames(ids)}</p><p class="sm">只修改填写/选择了的项目,<b>留空表示保持不变</b>。</p>
+  <div class="f"><label>场地</label><input id="b_venue" placeholder="如:田径场、沙坑">
+  <label>组别</label><input id="b_grp" placeholder="如:高一组"><label>性别</label><select id="b_gender"><option value="">(不修改)</option><option value="M">男</option><option value="F">女</option><option value="X">不限/混合</option></select>
+  <label>开始时间</label><input type="datetime-local" id="b_start"><label>预计时长(分)</label><input type="number" id="b_dur" min="1">
+  <label>跑道数</label><input type="number" id="b_lanes" min="1" max="12"><label>状态</label><select id="b_status"><option value="">(不修改)</option><option value="scheduled">未开始</option><option value="running">进行中</option><option value="done">已结束</option></select>
+  <label>计入团体分</label><select id="b_scored"><option value="">(不修改)</option><option value="1">计分</option><option value="0">不计分</option></select></div>
+  <p class="sm mut">提示:要把场地/组别清空,请用单项「编辑」;要给不同项目排不同时间,请用「排时间」。</p>
+  <div class="row"><button class="pri" id="ok">应用到 ${ids.length} 项</button><button onclick="closeModal()">取消</button></div>`);
+  $('#ok').onclick = () => run(async () => {
+    const f = {}, v = id => $(id).value.trim();
+    if (v('#b_venue')) f.venue = v('#b_venue'); if (v('#b_grp')) f.grp = v('#b_grp'); if (v('#b_gender')) f.gender = v('#b_gender');
+    if (v('#b_start')) f.start_time = fromLocal(v('#b_start')); if (v('#b_dur')) f.duration = +v('#b_dur'); if (v('#b_lanes')) f.lanes = +v('#b_lanes');
+    if (v('#b_status')) f.status = v('#b_status'); if (v('#b_scored')) f.scored = +v('#b_scored');
+    if (!Object.keys(f).length) throw new Error('没有填写任何要修改的内容');
+    const r = await api('/api/events/bulk-update', 'POST', { ids, fields: f }); closeModal(); toast('已修改 ' + r.updated + ' 项'); render(); });
+};
+ACT.evShift = () => {
+  const ids = evSelIds(), n = EVS.filter(e => ids.includes(e.id) && !e.start_time).length;
+  modal(`整体平移时间(${ids.length} 项)`, `<p class="sm mut" style="margin-top:0">${evNames(ids)}</p>
+  <div class="f"><label>平移分钟数</label><input type="number" id="sh" value="30" step="5"></div>
+  <p class="sm mut">正数为推迟、负数为提前;已生成的分组时间同步平移。${n ? `其中 ${n} 项尚无开始时间,不受影响。` : ''}</p>
+  <div class="row"><button class="pri" id="ok">平移</button><button onclick="closeModal()">取消</button></div>`);
+  $('#ok').onclick = () => run(async () => { const m = +$('#sh').value; if (!m) throw new Error('请填写非 0 的分钟数');
+    await api('/api/events/bulk-update', 'POST', { ids, shift_minutes: m }); closeModal(); toast('已平移'); render(); });
+};
+ACT.evSched = () => {
+  const ids = evSelIds(), day = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+  modal(`自动排时间(${ids.length} 项)`, `<p class="sm mut" style="margin-top:0">${evNames(ids)}</p>
+  <p class="sm">按当前列表中的<b>显示顺序</b>依次排定开始时间(可先在筛选栏选“按开始时间/名称”排序)。每项占用其“预计时长”,项目之间留间隔。</p>
+  <div class="f"><label>起始时间</label><input type="datetime-local" id="sc_t" value="${day}T09:00"><label>项目间隔(分)</label><input type="number" id="sc_g" value="5" min="0">
+  <label>场地并行</label><label><input type="checkbox" id="sc_v" checked> 不同场地各排一条时间线(如跑道与沙坑可同时进行)</label></div>
+  <p class="sm mut">会覆盖这些项目原有的开始时间,并同步其分组时间。</p>
+  <div class="row"><button class="pri" id="ok">开始排时间</button><button onclick="closeModal()">取消</button></div>`);
+  $('#ok').onclick = () => run(async () => { const r = await api('/api/events/auto-schedule', 'POST', { ids, start: fromLocal($('#sc_t').value), gap: +$('#sc_g').value, per_venue: $('#sc_v').checked });
+    closeModal(); toast('已排定 ' + r.scheduled + ' 项'); render(); });
+};
+ACT.evHeats = () => {
+  const ids = evSelIds();
+  modal(`批量生成分组与跑道(${ids.length} 项)`, `<p class="sm mut" style="margin-top:0">${evNames(ids)}</p>
+  <div class="f"><label>方式</label><select id="gm"><option value="random">随机抽签</option><option value="seed">按报名成绩(强者排后组)</option></select><label>组间隔(分)</label><input type="number" id="gg" placeholder="留空用全局设置"></div>
+  <p class="sm" style="color:var(--bad,#c33)">将<b>重新生成</b>所选项目的分组与跑道,原有分组安排会被覆盖;没有报名的项目与接力项目请单独处理。</p>
+  <div class="row"><button class="pri" id="ok">生成</button><button onclick="closeModal()">取消</button></div>`);
+  $('#ok').onclick = () => run(async () => { const r = await api('/api/events/bulk-heats', 'POST', { ids, mode: $('#gm').value, gap: $('#gg').value });
+    closeModal(); toast('已生成 ' + r.generated + ' 个项目' + (r.skipped.length ? `;跳过(无报名):${r.skipped.join('、')}` : ''), r.skipped.length > 0); render(); });
+};
+ACT.evBulkDel = () => {
+  const ids = evSelIds(), reg = EVS.filter(e => ids.includes(e.id)).reduce((a, e) => a + e.n_entries, 0);
+  if (!confirm(`确定删除所选 ${ids.length} 个项目?\n其下共 ${reg} 条报名及全部成绩将一并删除,且无法恢复。`)) return;
+  run(async () => { await api('/api/events/bulk-delete', 'POST', { ids }); ids.forEach(i => EVSEL.delete(i)); toast('已删除 ' + ids.length + ' 个项目'); render(); });
+};
 ACT.presets = async () => {
   modal('添加常用项目', `<p class="mut sm">将创建 100/200/400/800/1500 米、4×100 接力、跳远、铅球、跳高,按所选性别各一套。之后可逐项修改时间与场地。</p>
   <div class="f"><label>性别</label><div><label><input type="checkbox" id="pm" checked> 男子</label> &nbsp; <label><input type="checkbox" id="pf" checked> 女子</label></div>
@@ -469,7 +577,7 @@ async function pageEvent(id) {
   $('#app').innerHTML = `<div class="card hero">
     <div class="hero-top"><div class="grow"><h2 class="hero-name">${esc(ev.name)}${ev.grp ? `<small>${esc(ev.grp)}</small>` : ''}</h2>
       <div class="row" style="margin-top:8px"><span class="chip">${KIND[ev.kind]}</span><span class="chip">${GEN[ev.gender]}</span>${ev.scored ? '' : '<span class="chip">不计团体分</span>'}</div></div>
-      <div class="row">${canRec() ? `<select id="st">${Object.entries(STAT).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>` : `<span class="chip ${ev.status}">${STAT[ev.status]}</span>`}
+      <div class="row">${mayRec(id) ? `<select id="st">${Object.entries(STAT).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>` : `<span class="chip ${ev.status}">${STAT[ev.status]}</span>`}
       ${isAdmin() ? `<button class="sm" data-act="evForm" data-id="${ev.id}">编辑项目</button>` : ''}</div></div>
     <div class="facts">
       <div><b class="num">${ev.start_time ? dt(ev.start_time) : '未排时间'}</b><span>开始时间(约 ${ev.duration} 分钟)</span></div>
@@ -501,8 +609,8 @@ async function pageEvent(id) {
   }
 
   if (tab === 'result') {
-    const canEdit = canRec();
-    body.innerHTML = (canEdit ? '' : `<div class="hint">登录(管理员或录入员)后才能录入成绩。<a href="#" data-act="login">登录</a></div>`) +
+    const canEdit = mayRec(id);
+    body.innerHTML = (canEdit ? '' : (ME === 'recorder' ? '<div class="hint">这个项目不是你负责的,只能查看成绩。</div>' : '<div class="hint">登录后才能录入成绩。<a href="#" data-act="login">登录</a></div>')) +
       `<div class="card"><div class="row" style="margin-bottom:10px"><b class="grow">成绩单位:${isField ? '米(如 5.43)' : '秒(如 12.34 或 1:05.20)'} · 回车跳到下一行</b>
       ${!isRelay && canEdit ? '<input id="bibq" placeholder="输入号码快速定位" style="width:140px" inputmode="numeric">' : ''}</div>
       <div class="tw"><table id="rt"><tr><th>${isField ? '顺序' : '道'}</th>${isRelay ? '' : '<th>号码</th>'}<th>${isRelay ? '队伍' : '姓名'}</th><th class="c-team">队伍</th><th>成绩(${unit})</th><th>状态</th><th>名次</th><th>得分</th></tr>
@@ -658,26 +766,27 @@ ACT.athForm = async d => {
 ACT.athImport = () => {
   modal('批量导入人员(可同时导入报名项目)', `
   <p class="sm" style="margin-top:0">从 Excel 复制整块表格粘贴到下面,或选择 CSV 文件。<b>第一行写表头</b>,列顺序任意:</p>
-  <p class="sm"><code>姓名</code> <code>性别</code> <code>年级</code> <code>班级</code>(或队伍) <code>号码</code> <code>项目</code> <code>备注</code>(只有“姓名”必填)</p>
+  <p class="sm"><code>姓名</code> <code>性别</code> <code>年级</code> <code>班级</code>(或队伍) <code>号码</code> <code>项目</code> <code>组别</code> <code>备注</code>(只有“姓名”必填)</p>
   <ul class="sm mut" style="margin:6px 0 10px;padding-left:20px"><li>“项目”列可填多个,用 <b>、</b> 或 ; 分隔,如:<code>100米、跳远</code>。系统按选手性别自动补“男子/女子”,也可写全名(如 <code>男子100米</code>);同名项目有组别时写 <code>男子100米高一组</code>。</li>
   <li>已存在的人员(号码相同,或姓名+队伍相同)会<b>更新</b>并追加项目,不会重复创建。</li>
-  <li>没写表头时按顺序:姓名,性别,队伍,号码,年级,项目,备注。</li></ul>
+  <li><b>项目不存在时会自动创建</b>:按“项目 + 选手性别 + 组别”建立,如 <code>100米</code> + 男 + <code>甲组</code> → <b>男子100米甲组</b>(含“接力”的建为接力项目,“跳/掷/铅球”等建为田赛,其余为径赛)。创建后可在「项目」页批量设置时间与场地。</li>
+  <li>没写表头时按顺序:姓名,性别,队伍,号码,年级,项目,组别,备注。</li></ul>
   <div class="row" style="margin-bottom:8px"><input type="file" id="imf" accept=".csv,.txt,.tsv"><a href="#" data-act="tpl">下载模板</a></div>
   <textarea id="tx" rows="9" style="width:100%;font-family:monospace;font-size:13px" placeholder="姓名,性别,年级,班级,号码,项目&#10;张三,男,高一,高一(1)班,001,100米、跳远&#10;李四,女,高一,高一(2)班,002,100米、铅球"></textarea>
-  <div class="row" style="margin-top:10px"><label><input type="checkbox" id="ct" checked> 自动创建不存在的队伍</label><label><input type="checkbox" id="ue" checked> 已存在则更新</label><span class="grow"></span><button class="pri" id="ok">导入</button><button onclick="closeModal()">取消</button></div>
+  <div class="row" style="margin-top:10px"><label>组别取自 <select id="gb"><option value="auto">“组别”列</option><option value="grade">“年级”列</option><option value="none">不分组别</option></select></label><label><input type="checkbox" id="ct" checked> 自动创建不存在的队伍</label><label><input type="checkbox" id="ue" checked> 已存在则更新</label><label><input type="checkbox" id="ce" checked> 自动创建不存在的项目</label><span class="grow"></span><button class="pri" id="ok">导入</button><button onclick="closeModal()">取消</button></div>
   <div id="imr"></div>`, true);
   $('#imf').onchange = async e => { const buf = await e.target.files[0].arrayBuffer(); let t;
     try { t = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (x) { t = new TextDecoder('gbk').decode(buf); }   // Excel 中文 CSV 常为 GBK
     $('#tx').value = t; };
   $('#ok').onclick = () => run(async () => {
-    const r = await api('/api/athletes/import', 'POST', { text: $('#tx').value, create_teams: $('#ct').checked, update_existing: $('#ue').checked });
+    const r = await api('/api/athletes/import', 'POST', { text: $('#tx').value, create_teams: $('#ct').checked, update_existing: $('#ue').checked, create_events: $('#ce').checked, group_by: $('#gb').value });
     const msgs = [...r.skipped.map(x => '✗ ' + x), ...r.warnings.map(x => '! ' + x)];
-    $('#imr').innerHTML = `<div class="card" style="margin:12px 0 0;background:var(--row)"><b>导入完成:</b>新增 ${r.imported} 人,更新 ${r.updated} 人,新建队伍 ${r.new_teams} 支,新增报名 ${r.registered} 项。
+    $('#imr').innerHTML = `<div class="card" style="margin:12px 0 0;background:var(--row)"><b>导入完成:</b>新增 ${r.imported} 人,更新 ${r.updated} 人,新建队伍 ${r.new_teams} 支,新增报名 ${r.registered} 项${r.created_events.length ? `,自动创建项目 ${r.created_events.length} 个` : ''}。${r.created_events.length ? `<div class="sm mut" style="margin-top:6px">新项目:${r.created_events.map(esc).join('、')}。<a href="#/events" onclick="closeModal()">去项目页设置时间与场地 →</a></div>` : ''}
     ${msgs.length ? `<div class="sm" style="margin-top:8px;max-height:24vh;overflow:auto">${msgs.map(esc).join('<br>')}</div>` : ''}</div>`;
     toast('导入完成'); });
 };
 ACT.tpl = () => {
-  const csv = '﻿姓名,性别,年级,班级,号码,项目,备注\n张三,男,高一,高一(1)班,001,100米、跳远,\n李四,女,高一,高一(2)班,002,100米、铅球、800米,\n';
+  const csv = '﻿姓名,性别,年级,班级,号码,项目,组别,备注\n张三,男,高一,高一(1)班,001,100米、跳远,甲组,\n李四,女,高一,高一(2)班,002,100米、铅球、800米,甲组,\n';
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = '人员导入模板.csv'; a.click();
 };
 ACT.bibs = () => {
@@ -722,7 +831,8 @@ ACT.teamForm = async d => {
 /* ============ 设置 ============ */
 async function pageSettings() {
   if (!isAdmin()) { $('#app').innerHTML = `<div class="card"><p>设置页仅管理员可用。</p><button class="pri" data-act="login">管理员登录</button></div>`; return; }
-  const [S, sch, lg] = await Promise.all([api('/api/settings'), api('/api/schedule'), api('/api/log')]);
+  const [S, sch, lg, recs, evAll] = await Promise.all([api('/api/settings'), api('/api/schedule'), api('/api/log'), api('/api/recorders'), api('/api/events')]);
+  const evMap = Object.fromEntries(evAll.map(e => [e.id, e]));
   const urls = INFO.urls || [];
   $('#app').innerHTML = `
   <div class="card"><h2>其他设备如何访问</h2><p class="mut sm">手机/平板/电脑连接<b>同一个 Wi-Fi / 局域网</b>,在浏览器输入下面任一地址(或扫码)。若打不开,请检查主机防火墙是否放行端口。</p>
@@ -738,9 +848,13 @@ async function pageSettings() {
     <label>分组间隔(分)</label><input type="number" name="heat_gap" value="${S.heat_gap}"></div>
     <p class="mut sm">名次并列时,并列者平分所占名次的得分(如两人并列第 2:(7+6)/2=6.5)。名次分超出名单的名次得 0 分。可在项目里单独覆盖。</p>
     <button class="pri">保存规则</button></form>
-  <form id="pf" class="card"><h2>账号密码</h2><div class="f"><label>管理员密码</label><input type="password" name="admin_password" placeholder="不修改请留空(至少4位)" autocomplete="new-password">
-    <label>录入员密码</label><input type="password" name="recorder_password" placeholder="${INFO.has_recorder ? '已设置,留空不改' : '未设置(未设置则无录入员账号)'}" autocomplete="new-password"></div>
-    <p class="mut sm">录入员只能录入成绩与改项目状态,适合分发给各赛场裁判。</p><div class="row"><button class="pri">保存密码</button>${INFO.has_recorder ? '<button type="button" id="clr">取消录入员账号</button>' : ''}</div></form>
+  <form id="pf" class="card"><h2>管理员密码</h2><div class="f"><label>新密码</label><input type="password" name="admin_password" placeholder="不修改请留空(至少4位)" autocomplete="new-password"></div><button class="pri">保存密码</button></form>
+  <div class="card"><div class="row" style="margin-bottom:8px"><h2 class="grow" style="margin:0">录入员账号</h2><button data-act="recAuto">按项目一键生成</button><button class="pri" data-act="recForm">+ 新建账号</button></div>
+    <p class="mut sm">每个账号只能录入被分配项目的成绩、修改这些项目的状态,其他项目只读。同时进行的项目请分别配账号。一个账号可负责多个项目,一个项目也可以有多个账号。登录时「账号」栏填这里的账号;管理员账号是 admin。</p>
+    <div class="tw"><table><tr><th>账号</th><th>姓名/备注</th><th>负责项目</th><th></th></tr>
+    ${recs.map(r => `<tr><td><b class="num" style="font-size:19px">${esc(r.username)}</b></td><td>${esc(r.name || '')}</td>
+      <td>${r.event_ids.length ? `<div class="row" style="gap:4px">${r.event_ids.map(id => evMap[id] ? `<span class="chip">${esc(evLabel(evMap[id]))}</span>` : '').join('')}</div>` : '<span class="mut">未分配项目</span>'}</td>
+      <td style="white-space:nowrap"><button class="sm" data-act="recForm" data-id="${r.id}">编辑</button> <button class="sm" data-act="recReset" data-id="${r.id}" data-u="${esc(r.username)}" data-n="${esc(r.name || '')}">重置密码</button> <button class="sm bad" data-act="recDel" data-id="${r.id}" data-u="${esc(r.username)}">删除</button></td></tr>`).join('') || '<tr><td colspan=4 class="mut">还没有录入员账号。点「按项目一键生成」可为每个项目各建一个。</td></tr>'}</table></div></div>
   <div class="card"><h2>时间冲突检查</h2>${sch.conflicts.length ? `<div class="tw"><table><tr><th>运动员</th><th>队伍</th><th>冲突项目</th></tr>${sch.conflicts.map(c => `<tr><td>${esc(c.name)} ${esc(c.bib || '')}</td><td>${esc(c.team || '')}</td><td>${esc(c.a)} (${c.at}) ⇄ ${esc(c.b)} (${c.bt})</td></tr>`).join('')}</table></div>` : '<p class="mut">未发现冲突。</p>'}</div>
   <div class="card"><h2>数据导出与备份</h2><div class="row"><a class="btn" href="/api/export/results.csv">项目成绩明细 CSV</a><a class="btn" href="/api/export/scores.csv">团体总分 CSV</a><a class="btn" href="/api/export/schedule.csv">时间表 CSV</a><a class="btn" href="/api/export/athletes.csv">人员名单 CSV</a><a class="btn pri" href="/api/backup">下载数据库备份</a></div>
   <p class="mut sm">所有数据保存在主机 data/meet.db;比赛期间可定期点击“下载数据库备份”,或直接复制该文件。</p></div>
@@ -749,12 +863,76 @@ async function pageSettings() {
   $('#sf').onsubmit = e => { e.preventDefault(); run(async () => { const o = Object.fromEntries(new FormData(e.target));
     ['points_individual', 'points_relay'].forEach(k => { o[k] = o[k].split(/[,，\s]+/).filter(Boolean).map(Number); if (o[k].some(isNaN)) throw new Error('名次分格式有误'); });
     await api('/api/settings', 'PUT', o); toast('已保存'); await boot(false); }); };
-  $('#pf').onsubmit = e => { e.preventDefault(); run(async () => { const o = Object.fromEntries(new FormData(e.target)); if (!o.admin_password && !o.recorder_password) return toast('未填写新密码', true);
+  $('#pf').onsubmit = e => { e.preventDefault(); run(async () => { const o = Object.fromEntries(new FormData(e.target)); if (!o.admin_password) return toast('未填写新密码', true);
     await api('/api/settings', 'PUT', o); toast('密码已更新'); e.target.reset(); await boot(); }); };
-  if ($('#clr')) $('#clr').onclick = () => run(async () => { await api('/api/settings', 'PUT', { clear_recorder_password: 1 }); await boot(); });
   $('#demo').onclick = () => run(async () => { await api('/api/demo', 'POST'); toast('已载入演示数据'); location.hash = '#/board'; });
   $('#reset').onclick = () => { if (prompt('此操作将清空所有队伍、人员、项目与成绩。\n如确认,请输入:确认清空') === '确认清空') run(async () => { await api('/api/reset', 'POST', { confirm: 'RESET' }); toast('已清空'); render(); }); };
 }
+
+/* ============ 录入员账号管理 ============ */
+function copyText(t) {
+  try { if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(t); return; } } catch (e) { }
+  const ta = document.createElement('textarea'); ta.value = t; ta.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); } catch (e) { } ta.remove();
+}
+function credsModal(title, rows) {
+  const text = rows.map(r => `${r.name || ''}\t账号:${r.username}\t密码:${r.password}`).join('\n');
+  modal(title, `<div class="hint warn">密码只显示这一次,请立即复制或下载保存。之后只能重置,无法再查看。</div>
+  <div class="tw"><table><tr><th>项目/姓名</th><th>账号</th><th>密码</th></tr>${rows.map(r => `<tr><td>${esc(r.name || '')}</td><td><b class="num" style="font-size:22px">${esc(r.username)}</b></td><td><b class="num" style="font-size:22px">${esc(r.password)}</b></td></tr>`).join('')}</table></div>
+  <div class="row" style="margin-top:14px"><button class="pri" id="cp">复制全部</button><button id="dl">下载 CSV</button><span class="grow"></span><button onclick="closeModal()">关闭</button></div>`, true);
+  $('#cp').onclick = () => { copyText(text); toast('已复制'); };
+  $('#dl').onclick = () => {
+    const q = x => '"' + String(x ?? '').replace(/"/g, '""') + '"';
+    const csv = '﻿项目/姓名,账号,密码\n' + rows.map(r => [r.name, r.username, r.password].map(q).join(',')).join('\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = '录入员账号.csv'; a.click();
+  };
+}
+function evPicker(evs, has, others) {
+  return `<div class="row" style="margin-bottom:6px"><b>负责项目</b><span class="mut sm" id="rcnt"></span><span class="grow"></span><button type="button" class="sm" id="rall">全选</button><button type="button" class="sm" id="rnone">清空</button></div>
+  <input id="rq" placeholder="搜索项目" style="width:100%;margin-bottom:6px">
+  <div id="rl" style="max-height:34vh;overflow:auto;border:1px solid var(--bd);padding:6px 10px">${evs.map(e => `<label class="rrow" data-n="${esc(evLabel(e))}" style="display:flex;gap:8px;align-items:center;padding:4px 0"><input type="checkbox" class="rc" value="${e.id}" ${has.has(e.id) ? 'checked' : ''}>
+    <span class="grow">${esc(evLabel(e))}</span><span class="mut sm">${dt(e.start_time)}</span>${others[e.id] ? `<span class="chip">已有 ${esc(others[e.id].join('、'))}</span>` : ''}</label>`).join('') || '<span class="mut">还没有项目</span>'}</div>`;
+}
+function evPickerBind(root) {
+  const cnt = () => $('#rcnt').textContent = `已选 ${root.querySelectorAll('.rc:checked').length} 项`;
+  root.querySelectorAll('.rc').forEach(c => c.onchange = cnt); cnt();
+  $('#rq').oninput = e => root.querySelectorAll('.rrow').forEach(l => l.style.display = l.dataset.n.includes(e.target.value.trim()) ? 'flex' : 'none');
+  $('#rall').onclick = () => { root.querySelectorAll('.rrow').forEach(l => { if (l.style.display !== 'none') l.querySelector('.rc').checked = true; }); cnt(); };
+  $('#rnone').onclick = () => { root.querySelectorAll('.rc').forEach(c => c.checked = false); cnt(); };
+}
+ACT.recForm = async d => {
+  const [recs, evs] = await Promise.all([api('/api/recorders'), api('/api/events')]);
+  const r = d.id ? recs.find(x => x.id == d.id) : { event_ids: [] };
+  const others = {}; recs.forEach(x => x.id != d.id && x.event_ids.forEach(e => (others[e] ||= []).push(x.username)));
+  const m = modal(d.id ? '编辑录入员 — ' + esc(r.username) : '新建录入员', `<form id="rf"><div class="f">
+    <label>账号</label><input name="username" required value="${esc(r.username || '')}" placeholder="字母/数字/汉字,如 r01">
+    <label>姓名/备注</label><input name="name" value="${esc(r.name || '')}" placeholder="如:李老师(可空)">
+    <label>${d.id ? '新密码' : '密码'}</label><input name="password" placeholder="${d.id ? '不修改请留空' : '留空则自动生成 6 位数字'}" autocomplete="new-password"></div>
+    ${evPicker(evs, new Set(r.event_ids), others)}
+    <div class="row" style="margin-top:14px"><button class="pri">保存</button><button type="button" onclick="closeModal()">取消</button></div></form>`, true);
+  evPickerBind(m);
+  $('#rf').onsubmit = e => { e.preventDefault(); run(async () => {
+    const f = e.target, o = { username: f.username.value, name: f.name.value, password: f.password.value, event_ids: [...f.querySelectorAll('.rc:checked')].map(c => +c.value) };
+    const res = await api('/api/recorders' + (d.id ? '/' + d.id : ''), d.id ? 'PUT' : 'POST', o);
+    if (!d.id && !o.password.trim()) { credsModal('账号已创建', [{ name: o.name, username: res.username, password: res.password }]); } else { closeModal(); toast('已保存'); }
+    render(); }); };
+};
+ACT.recAuto = async () => {
+  const [recs, evs] = await Promise.all([api('/api/recorders'), api('/api/events')]);
+  const others = {}; recs.forEach(x => x.event_ids.forEach(e => (others[e] ||= []).push(x.username)));
+  const has = new Set(evs.filter(e => !others[e.id]).map(e => e.id));
+  const m = modal('按项目一键生成账号', `<p class="mut sm" style="margin-top:0">为勾选的每个项目各建一个账号(r01、r02…按时间表顺序编号),密码随机 6 位数字。默认只勾选还没有账号的项目。</p>${evPicker(evs, has, others)}
+    <div class="row" style="margin-top:14px"><button class="pri" id="ok">生成</button><button onclick="closeModal()">取消</button></div>`, true);
+  evPickerBind(m);
+  $('#ok').onclick = () => run(async () => {
+    const ids = [...m.querySelectorAll('.rc:checked')].map(c => +c.value); if (!ids.length) return toast('请先勾选项目', true);
+    const r = await api('/api/recorders/auto', 'POST', { event_ids: ids }); credsModal(`已生成 ${r.created.length} 个账号`, r.created); render(); });
+};
+ACT.recReset = async d => {
+  if (!confirm(`重置「${d.u}」的密码?原密码立即失效,该账号会被强制下线。`)) return;
+  const r = await api('/api/recorders/' + d.id, 'PUT', { reset: true }); credsModal('新密码', [{ name: d.n, username: d.u, password: r.password }]);
+};
+ACT.recDel = async d => { if (!confirm(`删除账号「${d.u}」?该账号会立即下线。`)) return; await api('/api/recorders/' + d.id, 'DELETE'); toast('已删除'); render(); };
 
 boot();
 </script>

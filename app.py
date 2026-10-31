@@ -114,7 +114,7 @@ def get_raw(key):
 
 def log(action, detail=''):
     db().execute("INSERT INTO log(ts,role,action,detail) VALUES(?,?,?,?)",
-                 (datetime.now().strftime('%m-%d %H:%M:%S'), role() or '-', action, detail[:300]))
+                 (datetime.now().strftime('%m-%d %H:%M:%S'), who(), action, detail[:300]))
 
 
 # ----------------------------------------------------------------- 权限
@@ -133,13 +133,31 @@ def check_pw(pw, stored):
 def sess():
     return SESS.get(request.cookies.get('tok') or request.headers.get('X-Token'))
 
+
 def role():
     s = sess()
     return s['role'] if s else None
 
+
 def who():
     s = sess()
     return s['user'] if s else '-'
+
+
+def can_record(eid):
+    """管理员可录入所有项目;录入员只能录入被分配给自己的项目。"""
+    s = sess()
+    if not s:
+        return False
+    if s['role'] == 'admin':
+        return True
+    return db().execute("SELECT 1 FROM recorder_events WHERE recorder_id=? AND event_id=?",
+                        (s['uid'], eid)).fetchone() is not None
+
+
+def deny_event():
+    return jsonify(error='你的账号没有该项目的录入权限'), 403
+
 
 LEVEL = {'recorder': 1, 'admin': 2}
 
@@ -164,6 +182,11 @@ def _after(resp):
     return resp
 
 
+@app.errorhandler(ValueError)
+def _bad(e):
+    return jsonify(error=str(e)), 400
+
+
 @app.errorhandler(Exception)
 def _err(e):
     from werkzeug.exceptions import HTTPException
@@ -173,7 +196,6 @@ def _err(e):
     return jsonify(error='服务器错误: %s' % e), 500
 
 
-@app.post('/api/login')
 @app.post('/api/login')
 def login():
     p = request.get_json(silent=True) or {}
@@ -333,8 +355,7 @@ def info():
         mine = [r['event_id'] for r in db().execute("SELECT event_id FROM recorder_events WHERE recorder_id=?", (sd['uid'],))]
     return jsonify(meet_name=S['meet_name'], version=STATE['v'], role=role(),
                    user=sd['user'] if sd else None, name=sd['name'] if sd else None, my_events=mine,
-                   urls=['http://%s:%s' % (ip, port) for ip in lan_ips()],
-                   has_recorder=bool(get_raw('pw_recorder')))
+                   urls=['http://%s:%s' % (ip, port) for ip in lan_ips()])
 
 
 @app.get('/api/version')
@@ -371,13 +392,10 @@ def set_settings():
             elif k != 'meet_name':
                 v = float(v)
             put_setting(k, v)
-    for k, name in (('admin_password', 'pw_admin'), ('recorder_password', 'pw_recorder')):
-        if p.get(k):
-            if len(p[k]) < 4:
-                return jsonify(error='密码至少 4 位'), 400
-            put_setting(name, hash_pw(p[k]))
-    if p.get('clear_recorder_password'):
-        d.execute("DELETE FROM settings WHERE key='pw_recorder'")
+    if p.get('admin_password'):
+        if len(p['admin_password']) < 4:
+            return jsonify(error='密码至少 4 位'), 400
+        put_setting('pw_admin', hash_pw(p['admin_password']))
     log('改设置')
     d.commit()
     return jsonify(ok=True)
@@ -644,12 +662,21 @@ def athlete_delete_many():
     return jsonify(deleted=len(ids))
 
 
+def infer_kind(name):
+    if '接力' in name:
+        return 'relay'
+    if any(k in name for k in ('跳', '掷', '铅球', '铁饼', '标枪', '链球', '实心球', '垒球', '投')):
+        return 'field'
+    return 'track'
+
+
 HEAD_MAP = {'姓名': 'name', '名字': 'name', 'name': 'name', '性别': 'gender', 'gender': 'gender',
             '年级': 'grade', 'grade': 'grade', '班级': 'team', '队伍': 'team', '班级/队伍': 'team', '队': 'team',
             'team': 'team', '号码': 'bib', '编号': 'bib', '号码布': 'bib', 'bib': 'bib',
             '项目': 'events', '报名项目': 'events', '参赛项目': 'events', '参加项目': 'events', 'events': 'events',
+            '组别': 'grp', '组': 'grp', '分组': 'grp', 'grp': 'grp',
             '备注': 'note', 'note': 'note'}
-DEFAULT_COLS = ['name', 'gender', 'team', 'bib', 'grade', 'events', 'note']
+DEFAULT_COLS = ['name', 'gender', 'team', 'bib', 'grade', 'events', 'grp', 'note']
 
 
 def split_line(line):
@@ -666,7 +693,8 @@ def split_line(line):
 def athlete_import():
     """批量导入人员(可同时导入报名项目)。
     有表头(含“姓名”列)时按表头识别列,列顺序任意;
-    无表头时按固定顺序:姓名,性别,队伍,号码,年级,项目,备注。
+    无表头时按固定顺序:姓名,性别,队伍,号码,年级,项目,组别,备注。
+    项目不存在时按「项目+性别+组别」自动创建(create_events 为 False 时不创建)。
     “项目”列可写多个,用 、 ; | / 或逗号分隔(制表符粘贴时可含逗号)。
     """
     p = request.get_json() or {}
@@ -678,16 +706,34 @@ def athlete_import():
     skipped, warnings = [], []
     cols, first = list(DEFAULT_COLS), True
 
-    def find_event(tok, gender):
-        cands = [tok]
-        if not tok.startswith(('男', '女')):
-            cands.append(('男子' if gender == 'M' else '女子') + tok)
-        for c in cands:
-            for ev in evs:
-                g = ev['grp'] or ''
-                if c in (ev['name'], ev['name'] + g, g + ev['name']):
-                    return ev
-        return None
+    created, relay_noted = [], set()
+
+    def canon(tok, gender):
+        """把“100米/男100米/男子100米/混合4×100米接力”规范成 (项目全名, 性别, 去掉性别的基础名)。"""
+        t = tok.strip()
+        for pre, g in (('男子', 'M'), ('女子', 'F'), ('混合', 'X'), ('男', 'M'), ('女', 'F')):
+            if t.startswith(pre) and len(t) > len(pre):
+                return {'M': '男子', 'F': '女子', 'X': '混合'}[g] + t[len(pre):], g, t[len(pre):]
+        return ('男子' if gender == 'M' else '女子') + t, gender, t
+
+    def find_event(tok, gender, grp):
+        name, g, base = canon(tok, gender)
+        for ev in evs:
+            eg = ev['grp'] or ''
+            if grp and eg != grp:
+                continue
+            if (ev['name'] == name and ev['gender'] in (g, 'X')) or tok in (ev['name'], ev['name'] + eg, eg + ev['name']):
+                return ev
+        if not p.get('create_events', True) or (g in ('M', 'F') and g != gender):
+            return None
+        kind = infer_kind(base)
+        cur = d.execute("INSERT INTO events(%s) VALUES(%s)" % (EV_COLS, ','.join('?' * 15)),
+                        (name, kind, g, grp or None, None, {'relay': 25, 'field': 60}.get(kind, 20),
+                         None if kind == 'field' else '田径场', int(S['lanes']), 'scheduled', 1, None, None, None, None, None))
+        ev = dict(id=cur.lastrowid, name=name, grp=grp or None, kind=kind, gender=g)
+        evs.append(ev)
+        created.append(name + (grp or ''))
+        return ev
 
     for ln, line in enumerate((p.get('text') or '').splitlines(), 1):
         line = line.strip().lstrip('﻿')
@@ -744,12 +790,16 @@ def athlete_import():
                             (row['name'], gender, tid, row.get('bib'), row.get('grade'), row.get('note'))).lastrowid
             stat['imported'] += 1
         n_reg = d.execute("SELECT COUNT(*) FROM entries WHERE athlete_id=?", (aid,)).fetchone()[0]
+        gsrc = p.get('group_by', 'auto')
+        grp_val = None if gsrc == 'none' else (row.get('grade') if gsrc == 'grade' else row.get('grp'))
         for tok in [x.strip() for x in __import__('re').split(r'[、;；|/,，]+', row.get('events', '')) if x.strip()]:
-            ev = find_event(tok, gender)
+            ev = find_event(tok, gender, grp_val)
             if not ev:
-                warnings.append('第%d行 %s:找不到项目“%s”' % (ln, row['name'], tok))
+                warnings.append('第%d行 %s:找不到项目“%s”(或与性别不符)' % (ln, row['name'], tok))
             elif ev['kind'] == 'relay':
-                warnings.append('第%d行 %s:接力项目“%s”请在项目页按队伍报名' % (ln, row['name'], tok))
+                if ev['id'] not in relay_noted:
+                    relay_noted.add(ev['id'])
+                    warnings.append('接力项目“%s”已创建/匹配,个人不会自动报名,请在项目页按队伍报名' % (ev['name'] + (ev['grp'] or '')))
             elif ev['gender'] in ('M', 'F') and ev['gender'] != gender:
                 warnings.append('第%d行 %s:性别与项目“%s”不符,未报名' % (ln, row['name'], tok))
             else:
@@ -761,7 +811,7 @@ def athlete_import():
             warnings.append('第%d行 %s:共报 %d 项,超过上限 %d(已导入,请留意)' % (ln, row['name'], n_reg, int(S['max_events'])))
     log('导入人员', '新增%d 更新%d 报名%d' % (stat['imported'], stat['updated'], stat['registered']))
     d.commit()
-    return jsonify(skipped=skipped, warnings=warnings, **stat)
+    return jsonify(skipped=skipped, warnings=warnings, created_events=created, **stat)
 
 
 @app.post('/api/athletes/assign-bibs')
@@ -877,7 +927,10 @@ def event_get(eid):
 def event_update(eid):
     b = event_body(request.get_json() or {})
     d = db()
+    old = d.execute("SELECT * FROM events WHERE id=?", (eid,)).fetchone()
     d.execute("UPDATE events SET %s WHERE id=?" % ','.join(c + '=?' for c in EV_COLS.split(',')), b + (eid,))
+    if old and old['start_time'] != b[4]:
+        set_event_start(d, old, b[4])
     log('改项目', b[0])
     d.commit()
     return jsonify(ok=True)
@@ -886,6 +939,8 @@ def event_update(eid):
 @app.put('/api/events/<int:eid>/status')
 @need('recorder')
 def event_status(eid):
+    if not can_record(eid):
+        return deny_event()
     st = (request.get_json() or {}).get('status')
     if st not in ('scheduled', 'running', 'done'):
         return jsonify(error='状态无效'), 400
@@ -903,6 +958,141 @@ def event_delete(eid):
     log('删项目', str(eid))
     d.commit()
     return jsonify(ok=True)
+
+
+# ----------------------------------------------------------------- 项目批量管理
+TFMT = '%Y-%m-%d %H:%M'
+
+
+def _dt(x):
+    try:
+        return datetime.strptime(x, TFMT)
+    except (TypeError, ValueError):
+        return None
+
+
+def set_event_start(d, ev, new):
+    """修改项目开始时间,并同步平移已生成的分组时间。new 为 'YYYY-MM-DD HH:MM' 或 None。"""
+    old_t, new_t = _dt(ev['start_time']), _dt(new)
+    heats = d.execute("SELECT id,start_time,sort FROM heats WHERE event_id=? ORDER BY sort,id", (ev['id'],)).fetchall()
+    if new_t and old_t:
+        delta = new_t - old_t
+        for h in heats:
+            ht = _dt(h['start_time'])
+            if ht:
+                d.execute("UPDATE heats SET start_time=? WHERE id=?", ((ht + delta).strftime(TFMT), h['id']))
+    elif new_t and ev['kind'] != 'field':
+        gap = int(settings()['heat_gap'])
+        for k, h in enumerate(heats):
+            d.execute("UPDATE heats SET start_time=? WHERE id=?", ((new_t + timedelta(minutes=k * gap)).strftime(TFMT), h['id']))
+    elif not new_t:
+        d.execute("UPDATE heats SET start_time=NULL WHERE event_id=?", (ev['id'],))
+    d.execute("UPDATE events SET start_time=? WHERE id=?", (new_t.strftime(TFMT) if new_t else None, ev['id']))
+
+
+@app.post('/api/events/bulk-update')
+@need('admin')
+def events_bulk_update():
+    """批量修改:只改 fields 里出现的字段;shift_minutes 为整体平移开始时间。"""
+    p = request.get_json() or {}
+    ids = [int(i) for i in p.get('ids', [])]
+    f = p.get('fields') or {}
+    shift = int(p.get('shift_minutes') or 0)
+    if 'start_time' in f and f['start_time'] and not _dt(f['start_time']):
+        raise ValueError('开始时间格式不对')
+    d = db()
+    n = 0
+    for eid in ids:
+        ev = d.execute("SELECT * FROM events WHERE id=?", (eid,)).fetchone()
+        if not ev:
+            continue
+        sets, args = [], []
+        for k in ('venue', 'grp', 'note'):
+            if k in f:
+                sets.append(k + '=?')
+                args.append((f[k] or '').strip() or None)
+        if f.get('duration'):
+            sets.append('duration=?')
+            args.append(max(1, int(f['duration'])))
+        if f.get('lanes'):
+            sets.append('lanes=?')
+            args.append(min(12, max(1, int(f['lanes']))))
+        if f.get('status') in ('scheduled', 'running', 'done'):
+            sets.append('status=?')
+            args.append(f['status'])
+        if f.get('gender') in ('M', 'F', 'X'):
+            sets.append('gender=?')
+            args.append(f['gender'])
+        if 'scored' in f and f['scored'] in (0, 1, '0', '1'):
+            sets.append('scored=?')
+            args.append(int(f['scored']))
+        if sets:
+            d.execute("UPDATE events SET %s WHERE id=?" % ','.join(sets), args + [eid])
+        if 'start_time' in f:
+            set_event_start(d, ev, (f['start_time'] or '').strip() or None)
+        elif shift and _dt(ev['start_time']):
+            set_event_start(d, ev, (_dt(ev['start_time']) + timedelta(minutes=shift)).strftime(TFMT))
+        n += 1
+    log('批量修改项目', '%d 个' % n)
+    d.commit()
+    return jsonify(updated=n)
+
+
+@app.post('/api/events/bulk-delete')
+@need('admin')
+def events_bulk_delete():
+    ids = [int(i) for i in (request.get_json() or {}).get('ids', [])]
+    d = db()
+    d.executemany("DELETE FROM events WHERE id=?", [(i,) for i in ids])
+    log('批量删除项目', '%d 个' % len(ids))
+    d.commit()
+    return jsonify(deleted=len(ids))
+
+
+@app.post('/api/events/bulk-heats')
+@need('admin')
+def events_bulk_heats():
+    p = request.get_json() or {}
+    d = db()
+    S = settings()
+    ok, skipped = 0, []
+    for eid in [int(i) for i in p.get('ids', [])]:
+        ev = d.execute("SELECT * FROM events WHERE id=?", (eid,)).fetchone()
+        if not ev:
+            continue
+        n = make_heats(d, ev, S, p.get('mode', 'random'), p.get('lanes'), p.get('gap'))
+        if n is None:
+            skipped.append(ev['name'] + (ev['grp'] or ''))
+        else:
+            ok += 1
+    d.commit()
+    return jsonify(generated=ok, skipped=skipped)
+
+
+@app.post('/api/events/auto-schedule')
+@need('admin')
+def events_auto_schedule():
+    """按 ids 的顺序依次排开始时间。per_venue=True 时每个场地各排一条时间线(不同场地可同时进行)。"""
+    p = request.get_json() or {}
+    start = _dt((p.get('start') or '').strip())
+    if not start:
+        raise ValueError('请填写起始时间')
+    gap = int(p.get('gap') if p.get('gap') not in (None, '') else 5)
+    per_venue = bool(p.get('per_venue', True))
+    d = db()
+    clock, n = {}, 0
+    for eid in [int(i) for i in p.get('ids', [])]:
+        ev = d.execute("SELECT * FROM events WHERE id=?", (eid,)).fetchone()
+        if not ev:
+            continue
+        key = (ev['venue'] or '') if per_venue else ''
+        t = clock.get(key, start)
+        set_event_start(d, ev, t.strftime(TFMT))
+        clock[key] = t + timedelta(minutes=(ev['duration'] or 20) + gap)
+        n += 1
+    log('自动排时间', '%d 个项目' % n)
+    d.commit()
+    return jsonify(scheduled=n)
 
 
 # ----------------------------------------------------------------- 报名
@@ -993,19 +1183,14 @@ def lane_priority(L):
     return order
 
 
-@app.post('/api/events/<int:eid>/heats/generate')
-@need('admin')
-def heats_generate(eid):
-    p = request.get_json() or {}
-    d = db()
-    ev = d.execute("SELECT * FROM events WHERE id=?", (eid,)).fetchone()
-    S = settings()
-    L = int(p.get('lanes') or ev['lanes'] or S['lanes'])
-    gap = int(p.get('gap') if p.get('gap') not in (None, '') else S['heat_gap'])
-    mode = p.get('mode', 'random')
+def make_heats(d, ev, S, mode='random', lanes=None, gap=None):
+    """为项目重新生成分组与跑道。没有报名返回 None,否则返回组数。"""
+    eid = ev['id']
+    L = int(lanes or ev['lanes'] or S['lanes'])
+    gap = int(gap if gap not in (None, '') else S['heat_gap'])
     ents = [dict(r) for r in d.execute("SELECT * FROM entries WHERE event_id=? AND status!='DNS'", (eid,))]
     if not ents:
-        return jsonify(error='该项目还没有报名'), 400
+        return None
     d.execute("UPDATE entries SET heat_id=NULL, lane=NULL WHERE event_id=?", (eid,))
     d.execute("DELETE FROM heats WHERE event_id=?", (eid,))
     asc = ev['kind'] != 'field'
@@ -1044,8 +1229,20 @@ def heats_generate(eid):
             lane = (k + 1) if ev['kind'] == 'field' else prio[k]
             d.execute("UPDATE entries SET heat_id=?, lane=? WHERE id=?", (hid, lane, e['id']))
     log('生成分组', '%s %d 组' % (ev['name'], len(groups)))
+    return len(groups)
+
+
+@app.post('/api/events/<int:eid>/heats/generate')
+@need('admin')
+def heats_generate(eid):
+    p = request.get_json() or {}
+    d = db()
+    ev = d.execute("SELECT * FROM events WHERE id=?", (eid,)).fetchone()
+    n = make_heats(d, ev, settings(), p.get('mode', 'random'), p.get('lanes'), p.get('gap'))
+    if n is None:
+        return jsonify(error='该项目还没有报名'), 400
     d.commit()
-    return jsonify(heats=len(groups))
+    return jsonify(heats=n)
 
 
 @app.put('/api/heats/<int:hid>')
@@ -1063,6 +1260,8 @@ def heat_update(hid):
 @app.post('/api/events/<int:eid>/results')
 @need('recorder')
 def results_save(eid):
+    if not can_record(eid):
+        return deny_event()
     p = request.get_json() or {}
     d = db()
     ev = d.execute("SELECT * FROM events WHERE id=?", (eid,)).fetchone()
@@ -1200,6 +1399,141 @@ def find_conflicts(d):
     return out
 
 
+# ----------------------------------------------------------------- 录入员账号(按项目授权)
+def _gen_pw():
+    return '%06d' % random.SystemRandom().randrange(1000000)
+
+
+def _rec_events(d, rid):
+    return [r['event_id'] for r in d.execute("SELECT event_id FROM recorder_events WHERE recorder_id=? ORDER BY event_id", (rid,))]
+
+
+def _set_rec_events(d, rid, ids):
+    d.execute("DELETE FROM recorder_events WHERE recorder_id=?", (rid,))
+    for eid in {int(x) for x in ids}:
+        if d.execute("SELECT 1 FROM events WHERE id=?", (eid,)).fetchone():
+            d.execute("INSERT INTO recorder_events(recorder_id,event_id) VALUES(?,?)", (rid, eid))
+
+
+def _kick(rid):
+    for t in [t for t, x in SESS.items() if x.get('uid') == rid]:
+        SESS.pop(t, None)
+
+
+def _check_username(d, u, rid=None):
+    import re
+    if not u or not re.fullmatch(r'[A-Za-z0-9_\-\u4e00-\u9fa5]{1,24}', u):
+        raise ValueError('账号只能由字母、数字、下划线、短横线或汉字组成(最长 24 位)')
+    if u.lower() == 'admin':
+        raise ValueError('“admin”是管理员账号,请换一个')
+    r = d.execute("SELECT id FROM recorders WHERE username=?", (u,)).fetchone()
+    if r and r['id'] != rid:
+        raise ValueError('账号“%s”已存在' % u)
+
+
+@app.get('/api/recorders')
+@need('admin')
+def rec_list():
+    d = db()
+    return jsonify([dict(id=r['id'], username=r['username'], name=r['name'], event_ids=_rec_events(d, r['id']))
+                    for r in d.execute("SELECT * FROM recorders ORDER BY id")])
+
+
+@app.post('/api/recorders')
+@need('admin')
+def rec_create():
+    p = request.get_json() or {}
+    d = db()
+    u = (p.get('username') or '').strip()
+    _check_username(d, u)
+    pw = (p.get('password') or '').strip()
+    if not pw:
+        pw = _gen_pw()
+    elif len(pw) < 4:
+        raise ValueError('密码至少 4 位')
+    cur = d.execute("INSERT INTO recorders(username,name,pw) VALUES(?,?,?)", (u, (p.get('name') or '').strip() or None, hash_pw(pw)))
+    _set_rec_events(d, cur.lastrowid, p.get('event_ids', []))
+    log('新建录入员', u)
+    d.commit()
+    return jsonify(id=cur.lastrowid, username=u, password=pw)
+
+
+@app.put('/api/recorders/<int:rid>')
+@need('admin')
+def rec_update(rid):
+    p = request.get_json() or {}
+    d = db()
+    r = d.execute("SELECT * FROM recorders WHERE id=?", (rid,)).fetchone()
+    if not r:
+        return jsonify(error='账号不存在'), 404
+    u = (p.get('username') or r['username']).strip()
+    kick = False
+    if u != r['username']:
+        _check_username(d, u, rid)
+        kick = True
+    new_pw = None
+    if p.get('reset'):
+        new_pw = _gen_pw()
+    elif (p.get('password') or '').strip():
+        new_pw = p['password'].strip()
+        if len(new_pw) < 4:
+            raise ValueError('密码至少 4 位')
+    if new_pw:
+        d.execute("UPDATE recorders SET pw=? WHERE id=?", (hash_pw(new_pw), rid))
+        kick = True
+    d.execute("UPDATE recorders SET username=?, name=? WHERE id=?", (u, (p.get('name') or '').strip() or None, rid))
+    if 'event_ids' in p:
+        _set_rec_events(d, rid, p['event_ids'])
+    if kick:
+        _kick(rid)
+    log('改录入员', u)
+    d.commit()
+    return jsonify(ok=True, password=new_pw)
+
+
+@app.delete('/api/recorders/<int:rid>')
+@need('admin')
+def rec_delete(rid):
+    d = db()
+    d.execute("DELETE FROM recorders WHERE id=?", (rid,))
+    _kick(rid)
+    log('删录入员', str(rid))
+    d.commit()
+    return jsonify(ok=True)
+
+
+@app.post('/api/recorders/auto')
+@need('admin')
+def rec_auto():
+    """为项目一键生成录入员账号:每个项目一个账号(r01、r02…),随机 6 位密码。密码只在此刻返回一次。"""
+    p = request.get_json() or {}
+    d = db()
+    evs = [dict(r) for r in d.execute("SELECT id,name,grp FROM events ORDER BY COALESCE(start_time,'9999'), id")]
+    seq = {e['id']: i + 1 for i, e in enumerate(evs)}
+    if p.get('event_ids') is not None:
+        want = {int(x) for x in p['event_ids']}
+    else:
+        have = {r['event_id'] for r in d.execute("SELECT event_id FROM recorder_events")}
+        want = {e['id'] for e in evs if e['id'] not in have}
+    out = []
+    for e in evs:
+        if e['id'] not in want:
+            continue
+        base, n = 'r%02d' % seq[e['id']], 1
+        u = base
+        while d.execute("SELECT 1 FROM recorders WHERE username=?", (u,)).fetchone():
+            n += 1
+            u = '%s_%d' % (base, n)
+        pw = _gen_pw()
+        label = e['name'] + (e['grp'] or '')
+        rid = d.execute("INSERT INTO recorders(username,name,pw) VALUES(?,?,?)", (u, label, hash_pw(pw))).lastrowid
+        _set_rec_events(d, rid, [e['id']])
+        out.append(dict(username=u, password=pw, name=label))
+    log('批量生成录入员', '%d 个' % len(out))
+    d.commit()
+    return jsonify(created=out)
+
+
 # ----------------------------------------------------------------- 导出 / 备份 / 日志
 def csv_response(name, header, rows):
     buf = io.StringIO()
@@ -1273,7 +1607,7 @@ def reset_all():
     dst = sqlite3.connect(os.path.join(path, 'before-reset-%s.db' % datetime.now().strftime('%Y%m%d-%H%M%S')))
     d.backup(dst)
     dst.close()
-    for t in ('entries', 'heats', 'events', 'athletes', 'teams', 'log'):
+    for t in ('entries', 'heats', 'events', 'athletes', 'teams', 'recorders', 'log'):
         d.execute("DELETE FROM %s" % t)
     d.commit()
     return jsonify(ok=True)
