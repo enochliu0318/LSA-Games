@@ -1,0 +1,757 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LSA Games</title>
+<style>
+@font-face{font-family:"Num";src:url(/static/fonts/barlow-condensed-latin-500-normal.woff2) format("woff2");font-weight:500;font-display:swap}
+@font-face{font-family:"Num";src:url(/static/fonts/barlow-condensed-latin-600-normal.woff2) format("woff2");font-weight:600;font-display:swap}
+@font-face{font-family:"Num";src:url(/static/fonts/barlow-condensed-latin-700-normal.woff2) format("woff2");font-weight:700;font-display:swap}
+@font-face{font-family:"Num";src:url(/static/fonts/barlow-condensed-latin-700-italic.woff2) format("woff2");font-weight:700;font-style:italic;font-display:swap}
+@font-face{font-family:"Num";src:url(/static/fonts/barlow-condensed-latin-800-italic.woff2) format("woff2");font-weight:800;font-style:italic;font-display:swap}
+:root{
+  --ink:#15171A;--track:#1E2126;--volt:#DDF52E;
+  --bg:#ECEEF0;--card:#fff;--tx:#15171A;--mut:#646A73;--bd:#E0E3E7;--row:#F4F5F7;--field:#C8CDD3;
+  --pri:#15171A;--pri-tx:#fff;
+  --ok:#12663A;--warn:#B85400;--bad:#D4243A;
+  --gold:#FFC62E;--silver:#C9CFD9;--bronze:#E8924F;--gold-d:#A87800;--silver-d:#7C8494;--bronze-d:#A8571A;
+  --num:"Num","Barlow Condensed","DIN Condensed","Arial Narrow",system-ui,sans-serif;
+  --sans:-apple-system,"PingFang SC","HarmonyOS Sans SC","Noto Sans SC","Microsoft YaHei",system-ui,sans-serif;
+  --slant:polygon(10px 0,100% 0,calc(100% - 10px) 100%,0 100%)
+}
+@media(prefers-color-scheme:dark){:root{--bg:#0E1012;--card:#1A1D21;--tx:#F1F2EF;--mut:#98A0AB;--bd:#2C3036;--row:#21252A;--field:#3A4048;--pri:#DDF52E;--pri-tx:#15171A;--ok:#52D388;--warn:#F5A340;--bad:#FF6B7A;--gold-d:#FFC62E;--silver-d:#C9CFD9;--bronze-d:#E8924F}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
+:focus-visible{outline:3px solid var(--volt);outline-offset:1px;box-shadow:0 0 0 1px var(--tx)}
+a{color:inherit;text-decoration:underline;text-decoration-color:var(--volt);text-decoration-thickness:3px;text-underline-offset:3px}
+a:hover{background:var(--volt);color:var(--ink);text-decoration:none}
+code{background:var(--row);border:1px solid var(--bd);border-radius:3px;padding:0 5px;font-size:12.5px}
+
+/* ---------- 顶部横幅 ---------- */
+.mast{position:sticky;top:0;z-index:30;background:var(--ink);color:#fff}
+.mast-in{max-width:1180px;margin:0 auto;height:64px;padding:0 32px;display:flex;align-items:center;gap:30px}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}
+.speed{width:34px;height:24px;flex:none}
+.wm{font:italic 800 34px/1 var(--num);letter-spacing:.02em;text-transform:uppercase;white-space:nowrap;color:#fff;overflow:hidden;text-overflow:ellipsis}
+.wm i{font-style:inherit;color:var(--volt)}
+.mast nav{display:flex;gap:2px}
+.mast nav a,#tabbar a{text-decoration:none}
+.mast nav a{height:38px;line-height:38px;padding:0 18px;color:#B3B8C0;font-weight:700}
+.mast nav a:hover{color:#fff;background:transparent}
+.mast nav a.on{background:var(--volt);color:var(--ink);clip-path:var(--slant)}
+.mast nav svg{display:none}
+.mast-foot{margin-left:auto;display:flex;align-items:center;gap:8px}
+.mast .chip{background:rgba(255,255,255,.14);color:#fff}
+.mast button{background:transparent;color:#fff;border-color:rgba(255,255,255,.35)}
+.mast button:hover{background:var(--volt);border-color:var(--volt);color:var(--ink)}
+.top{max-width:1180px;margin:0 auto;padding:34px 32px 8px;display:flex;align-items:flex-end;gap:16px}
+#ptitle{position:relative;margin:0;padding-bottom:16px;font-size:46px;line-height:1.05;font-weight:800;letter-spacing:-.02em}
+#ptitle::before,#ptitle::after{content:"";position:absolute;bottom:0;height:7px;clip-path:polygon(9px 0,100% 0,calc(100% - 9px) 100%,0 100%)}
+#ptitle::before{left:0;width:58px;background:var(--tx)}
+#ptitle::after{left:48px;width:26px;background:var(--volt);box-shadow:0 0 0 0 transparent}
+.date{margin-left:auto;text-align:right;line-height:1;padding-bottom:12px}
+.date b{display:block;font:italic 800 58px/.9 var(--num)}
+.date span{display:block;margin-top:6px;font-size:13px;color:var(--mut)}
+main{max-width:1180px;margin:0 auto;padding:16px 32px 64px}
+#tabbar{display:none}
+
+/* ---------- 基础组件 ---------- */
+.card{background:var(--card);border-top:4px solid var(--tx);padding:24px 26px;margin-bottom:22px}
+.card h2,.card h3{margin:0 0 14px;font-size:19px;font-weight:800}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.grow{flex:1}
+.mut{color:var(--mut)}.sm{font-size:13px}
+button,.btn{font:inherit;font-weight:600;border:1.5px solid var(--field);background:var(--card);color:var(--tx);padding:6px 14px;border-radius:4px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;line-height:1.3}
+button:hover,.btn:hover{border-color:var(--tx);background:var(--card);color:var(--tx)}
+button.pri{background:var(--ink);border-color:var(--ink);color:#fff}
+button.pri:hover{background:var(--volt);border-color:var(--ink);color:var(--ink)}
+@media(prefers-color-scheme:dark){button.pri{background:var(--volt);border-color:var(--volt);color:var(--ink)}button.pri:hover{background:#fff;border-color:#fff}}
+button.bad{color:var(--bad)}button.bad:hover{border-color:var(--bad);color:var(--bad)}
+button.sm,.btn.sm{padding:2px 10px;font-size:13px}
+input,select,textarea{font:inherit;color:var(--tx);background:var(--card);border:1.5px solid var(--field);border-radius:4px;padding:6px 10px;max-width:100%}
+input[type=checkbox]{accent-color:var(--ink);width:16px;height:16px;vertical-align:-3px}
+@media(prefers-color-scheme:dark){input[type=checkbox]{accent-color:var(--volt)}}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--tx);box-shadow:0 0 0 3px var(--volt)}
+table{border-collapse:collapse;width:100%}
+th,td{padding:11px 10px;text-align:left;border-bottom:1px solid var(--bd);vertical-align:middle}
+th{font-size:12.5px;font-weight:700;color:var(--tx);white-space:nowrap;padding:8px 10px;border-bottom:2px solid var(--tx)}
+tr:last-child td{border-bottom:0}
+tr[data-act]:hover td{background:var(--row)}
+.tw{overflow-x:auto}
+.tag{display:inline-block;padding:1px 15px;background:var(--c,#888);color:var(--t,#fff);font-size:12.5px;font-weight:700;line-height:1.55;white-space:nowrap;clip-path:polygon(7px 0,100% 0,calc(100% - 7px) 100%,0 100%)}
+.chip{display:inline-flex;align-items:center;padding:1px 8px;border-radius:3px;font-size:12px;font-weight:600;background:var(--row);color:var(--mut);border:0;white-space:nowrap}
+.chip.done{background:color-mix(in srgb,var(--ok) 14%,transparent);color:var(--ok)}
+.chip.running{background:var(--volt);color:var(--ink)}
+.chip.running::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ink);margin-right:6px;animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.2}}
+.hint{background:#F7FBD0;color:#15171A;border-left:5px solid var(--volt);padding:10px 14px;margin-bottom:14px;font-size:14px;line-height:1.6}
+.hint.warn{background:#FFE8CF;border-left-color:#E8890C}
+@media(prefers-color-scheme:dark){.hint{background:#2A2F10;color:#F1F2EF}.hint.warn{background:#3A2A12}}
+.num,.val,.rk2 b,.pt,.lane-rank,.lane-score,.bib{font-family:var(--num);font-variant-numeric:tabular-nums}
+.m1{color:var(--gold-d)}.m2{color:var(--silver-d)}.m3{color:var(--bronze-d)}
+.bib{display:inline-block;min-width:38px;text-align:center;padding:0 6px;border:2px solid var(--tx);border-radius:3px;background:var(--card);font-weight:700;font-size:15px;line-height:1.3;letter-spacing:.04em}
+.tabs{display:flex;gap:4px;margin:0 0 20px;flex-wrap:wrap}
+.tabs button{border:0;border-radius:0;background:var(--bd);color:var(--tx);padding:8px 28px;font-weight:700;clip-path:polygon(12px 0,100% 0,calc(100% - 12px) 100%,0 100%)}
+.tabs button:hover{background:var(--field);color:var(--tx)}
+.tabs button.on{background:var(--ink);color:var(--volt)}
+@media(prefers-color-scheme:dark){.tabs button.on{background:var(--volt);color:var(--ink)}}
+.tabs button:focus-visible{outline:none;background:var(--volt);color:var(--ink);box-shadow:none}
+.tree-0{padding-left:0}.tree-1{padding-left:22px}.tree-2{padding-left:44px}.tree-3{padding-left:66px}
+tr.saved td{background:color-mix(in srgb,var(--volt) 55%,transparent);transition:background .8s}
+tr.err td{background:color-mix(in srgb,var(--bad) 16%,transparent)}
+.val{width:112px;text-align:right;font-weight:700;font-size:21px;padding:4px 10px}
+.val::placeholder{font:400 13px var(--sans);color:var(--mut)}
+.rk2 b{font-size:26px;font-weight:700}.pt{font-size:21px;font-weight:700}
+#rt td:first-child{font-family:var(--num);font-size:19px;font-weight:700}
+#rt td{white-space:nowrap}
+select.lane{width:68px;font:700 19px var(--num);padding:2px 6px}
+
+/* ---------- 弹窗 / 提示 ---------- */
+.modal-bg{position:fixed;inset:0;background:rgba(21,23,26,.6);z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:5vh 12px;overflow:auto}
+.modal{background:var(--card);border-top:6px solid var(--volt);padding:24px;width:100%;max-width:540px;box-shadow:10px 10px 0 rgba(21,23,26,.9);animation:pop .14s ease-out}
+.modal.wide{max-width:840px}
+.modal h3{margin:0 0 16px;font-size:20px;font-weight:800}
+@keyframes pop{from{opacity:0;transform:translate(-6px,-6px)}}
+.f{display:grid;grid-template-columns:104px 1fr;gap:10px 12px;align-items:center;margin-bottom:14px}
+.f label{color:var(--mut);font-size:14px}.f .full{grid-column:1/-1}
+#toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 20px 10px 16px;border-left:6px solid var(--volt);z-index:99;display:none;max-width:90vw;box-shadow:6px 6px 0 rgba(0,0,0,.25)}
+#toast.bad{border-left-color:var(--bad)}
+#upd{position:fixed;right:20px;bottom:20px;z-index:40;display:none;background:var(--volt);border-color:var(--ink);color:var(--ink);box-shadow:5px 5px 0 var(--ink)}
+#upd:hover{background:var(--volt);color:var(--ink)}
+
+/* ---------- 积分榜:沥青跑道 ---------- */
+.card.tk{background:var(--track);color:#fff;border-top-color:var(--volt);padding:22px 28px 8px}
+.tk h2{color:#fff}.tk .mut{color:rgba(255,255,255,.62)}
+.tk .btn,.tk select{background:transparent;color:#fff;border-color:rgba(255,255,255,.4)}
+.tk .btn:hover{background:var(--volt);border-color:var(--volt);color:var(--ink)}
+.tk select option{color:#15171A;background:#fff}
+.lanes{margin:16px 0 14px;border-bottom:3px solid rgba(255,255,255,.92)}
+.lane{display:grid;grid-template-columns:84px minmax(0,1fr) auto;gap:0 20px;align-items:center;padding:20px 0;border-top:3px solid rgba(255,255,255,.92);cursor:pointer}
+.lane-rank{font:italic 800 60px/1 var(--num);text-align:center;color:#fff}
+.tk .m1{color:var(--gold)}.tk .m2{color:var(--silver)}.tk .m3{color:var(--bronze)}
+.lane-main{position:relative}
+.lane-main::after{content:"";position:absolute;right:0;top:-20px;bottom:-20px;width:14px;background:repeating-conic-gradient(#fff 0 25%,#15171A 0 50%) 0 0/14px 14px}
+.lane-name{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;padding-right:24px}
+.lane-name b{font-size:21px;font-weight:800}
+.lane:hover .lane-name b{text-decoration:underline;text-decoration-color:var(--volt);text-decoration-thickness:3px;text-underline-offset:4px}
+.lane-meta{display:flex;gap:14px;font-size:13px;color:rgba(255,255,255,.62)}
+.track{position:relative;height:20px;margin:12px 26px 0 0}
+.track::before{content:"";position:absolute;left:0;right:0;top:50%;height:2px;margin-top:-1px;background:repeating-linear-gradient(90deg,rgba(255,255,255,.3) 0 9px,transparent 9px 18px)}
+.track .run{position:absolute;left:0;top:0;bottom:0;width:var(--w);min-width:30px;background:var(--c);clip-path:polygon(0 0,100% 0,calc(100% - 14px) 100%,0 100%);transform-origin:left center;animation:run .9s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i) * 80ms)}
+@keyframes run{from{transform:scaleX(0)}}
+.lane-score{font:italic 800 68px/1 var(--num);text-align:right;min-width:96px;color:#fff}
+.lane-score.lead{color:var(--volt)}
+.res{display:grid;grid-template-columns:210px minmax(0,1fr);gap:8px 20px;padding:16px 0;border-top:1px solid var(--bd);cursor:pointer}
+.res:first-child{border-top:0}
+.res:hover .res-t b{text-decoration:underline;text-decoration-color:var(--volt);text-decoration-thickness:3px;text-underline-offset:3px}
+.res-t{display:flex;flex-direction:column;gap:5px;align-items:flex-start}
+.res-t b{font-size:16px;font-weight:800}
+.pods{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 18px}
+.pod2{display:flex;align-items:center;gap:10px;min-width:0}
+.pn{font:italic 800 32px/1 var(--num);width:22px;text-align:center;flex:none}
+.pbody{min-width:0;flex:1}.pname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pv{font:700 21px/1 var(--num)}
+.rec{font-size:11.5px;font-weight:700;color:var(--ink);background:var(--volt);padding:0 6px;clip-path:polygon(5px 0,100% 0,calc(100% - 5px) 100%,0 100%);padding:0 10px}
+
+/* ---------- 时间表:时间线 ---------- */
+.day{display:flex;align-items:baseline;gap:12px;margin:6px 0 8px}
+.day:not(:first-child){margin-top:32px}
+.day .num{font:italic 800 46px/1 var(--num)}
+.day span:last-child{color:var(--mut)}
+.tl-row{display:grid;grid-template-columns:84px 18px minmax(0,1fr);gap:0 14px;cursor:pointer}
+.tl-time{text-align:right;padding:10px 0;font:700 25px/1.1 var(--num)}
+.tl-time small{display:block;font:500 13px/1.4 var(--sans);color:var(--mut);margin-top:2px}
+.tl-rail{position:relative}
+.tl-rail::before{content:"";position:absolute;left:8px;top:0;bottom:0;width:2px;background:var(--bd)}
+.tl-rail i{position:absolute;left:3px;top:18px;width:12px;height:12px;background:var(--tx);transform:rotate(45deg)}
+.tl-body{padding:10px 0 14px;border-bottom:1px solid var(--bd);min-width:0}
+.tl-row:last-child .tl-body{border-bottom:0}
+.tl-name{font-size:16px;font-weight:800}
+.tl-row:hover .tl-name{text-decoration:underline;text-decoration-color:var(--volt);text-decoration-thickness:3px;text-underline-offset:3px}
+.meta{display:flex;gap:16px;flex-wrap:wrap;margin-top:3px}
+.tl-row.done .tl-name,.tl-row.done .tl-time{color:var(--mut)}
+.tl-row.done .tl-rail i{background:var(--field)}
+.tl-row.now .tl-rail i{background:var(--volt);outline:2px solid var(--ink);outline-offset:1px;width:14px;height:14px;left:2px;top:17px}
+.tl-row.now .tl-body{background:color-mix(in srgb,var(--volt) 30%,transparent);margin-left:-12px;padding-left:12px}
+
+/* ---------- 项目详情头部 ---------- */
+.card.hero{background:var(--ink);color:#fff;border-top-color:var(--volt);padding:26px 28px 28px;clip-path:polygon(0 0,100% 0,100% calc(100% - 24px),calc(100% - 24px) 100%,0 100%)}
+.hero-top{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+.hero-name{font-size:38px!important;line-height:1.15;margin:0!important;font-weight:800!important;letter-spacing:-.01em;color:#fff}
+.hero-name small{font-size:16px;font-weight:500;color:rgba(255,255,255,.62);margin-left:10px}
+.hero .chip{background:rgba(255,255,255,.14);color:#fff}
+.hero .chip.done{background:rgba(82,211,136,.2);color:#7BE3A8}.hero .chip.running{background:var(--volt);color:var(--ink)}
+.hero select,.hero button{background:transparent;color:#fff;border-color:rgba(255,255,255,.4)}
+.hero select option{color:#15171A;background:#fff}
+.hero button:hover{background:var(--volt);border-color:var(--volt);color:var(--ink)}
+.facts{display:flex;gap:10px 38px;flex-wrap:wrap;margin-top:22px;padding-top:18px;border-top:1px solid rgba(255,255,255,.22)}
+.facts>div{display:flex;flex-direction:column;gap:3px;min-width:0}
+.facts b{font-size:19px;font-weight:700;line-height:1.25;color:#fff}
+.facts b.num{font:italic 800 32px/1 var(--num);color:var(--volt)}
+.facts span{font-size:12.5px;color:rgba(255,255,255,.6)}
+
+/* ---------- 大屏模式 ---------- */
+.tvx{display:none}
+body.tv{background:var(--track)}
+body.tv .mast,body.tv #tabbar,body.tv .top{display:none}
+body.tv main{max-width:none;padding:28px 48px}
+body.tv .lane{padding:30px 0}
+body.tv .lane-rank{font-size:96px}body.tv .lane-score{font-size:112px}body.tv .lane-name b{font-size:36px}
+body.tv .lane-meta{font-size:19px}body.tv .track{height:28px;margin-top:16px}body.tv .lane-main::after{top:-30px;bottom:-30px}
+body.tv .tvx{display:inline-flex;position:fixed;top:12px;right:14px;z-index:60;background:var(--ink);color:#fff;border-color:rgba(255,255,255,.4);opacity:.7}
+body.tv .tvx:hover{opacity:1;background:var(--volt);color:var(--ink)}
+
+/* ---------- 手机 ---------- */
+@media(max-width:860px){
+  .mast-in{height:54px;padding:0 14px;gap:10px}
+  .mast nav{display:none}.speed{width:28px}.wm{font-size:27px}
+  .brand{flex:1}.mast-foot{margin-left:0}
+  #tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--ink);padding-bottom:env(safe-area-inset-bottom)}
+  #tabbar a{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:9px 0 7px;font-size:11px;font-weight:600;color:#9AA0A8}
+  #tabbar a.on{color:var(--volt)}
+  #tabbar svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+  .top{padding:20px 16px 4px}#ptitle{font-size:32px;padding-bottom:14px}.date b{font-size:38px}.date span{font-size:12px}
+  main{padding:10px 12px 96px}
+  .card{padding:16px}.card.tk{padding:16px 16px 4px}
+  .f{grid-template-columns:1fr}
+  .lane{grid-template-columns:50px minmax(0,1fr) auto;gap:0 10px;padding:16px 0}
+  .lane-rank{font-size:42px}.lane-score{font-size:46px;min-width:60px}.lane-name b{font-size:18px}
+  .lane-meta{gap:10px;width:100%}.lane-main::after{top:-16px;bottom:-16px;width:10px;background-size:10px 10px}.track{margin-right:18px}
+  .res{grid-template-columns:1fr}.pods{grid-template-columns:1fr}
+  .tl-row{grid-template-columns:62px 14px minmax(0,1fr);gap:0 8px}.tl-time{font-size:20px}
+  .tl-rail::before{left:6px}.tl-rail i{left:1px}.tl-row.now .tl-rail i{left:0}
+  .card.hero{padding:20px 18px 24px}.hero-name{font-size:28px!important}.facts{gap:14px 26px}.facts b.num{font-size:26px}
+  #toast{bottom:84px}#upd{bottom:76px;right:12px}
+  .modal-bg{padding:3vh 8px}.modal{padding:18px;box-shadow:6px 6px 0 rgba(21,23,26,.9)}
+}
+@media(max-width:560px){
+  .c-team{display:none}
+  th,td{padding:9px 6px}
+  #rt select{padding:5px 4px;font-size:14px}
+  .val{width:84px;font-size:20px}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header class="mast"><div class="mast-in">
+  <div class="brand"><svg class="speed" viewBox="0 0 34 24"><path d="M10 0h24l-7 8H3zM5 10h24l-7 7H-2zM0 19h19l-5 5H-5z" fill="#DDF52E" transform="translate(3 0)"/></svg><span class="wm" id="title">LSA Games</span></div>
+  <nav id="nav"></nav>
+  <div class="mast-foot"><span id="who" class="chip">游客</span><button id="loginBtn" class="sm">登录</button><button id="tvBtn" class="sm" title="大屏展示模式">大屏</button></div>
+</div></header>
+<div class="top"><h1 id="ptitle"></h1><div id="psub" class="date"></div></div>
+<main id="app">加载中…</main>
+<nav id="tabbar"></nav>
+<button class="tvx sm" id="tvx">退出大屏</button>
+<div id="toast"></div>
+<button id="upd" class="pri">数据已更新,点击刷新</button>
+
+<script>
+/* ============ 工具 ============ */
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let ME = null, INFO = {}, CUR = '';
+const KIND = { track: '径赛', field: '田赛', relay: '接力' }, GEN = { M: '男', F: '女', X: '不限' };
+const STAT = { scheduled: '未开始', running: '进行中', done: '已结束' };
+const RES_ST = { ok: '正常', DNS: 'DNS 未到', DNF: 'DNF 未完成', DQ: 'DQ 犯规', NM: 'NM 无成绩' };
+const lum = c => { const m = /^#?([0-9a-f]{6})$/i.exec(c || ''); if (!m) return 0; const v = parseInt(m[1], 16), f = x => { x /= 255; return x <= .03928 ? x / 12.92 : Math.pow((x + .055) / 1.055, 2.4); }; return .2126 * f(v >> 16 & 255) + .7152 * f(v >> 8 & 255) + .0722 * f(v & 255); };
+const tag = (n, c) => n ? `<span class="tag" style="--c:${esc(c || '#888')};--t:${lum(c) > .4 ? '#15171A' : '#fff'}">${esc(n)}</span>` : '<span class="mut">—</span>';
+const brandHTML = n => { n = String(n || 'LSA Games').trim(); if (!/^[\x20-\x7e]+$/.test(n)) return esc(n); const [w, ...r] = n.split(/\s+/); return `<i>${esc(w)}</i>${r.length ? ' ' + esc(r.join(' ')) : ''}`; };
+const bibTag = b => b ? `<span class="bib">${esc(b)}</span>` : '';
+const ICON = {
+  board: '<path d="M5 20v-7M12 20V5M19 20v-10"/>',
+  schedule: '<circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/>',
+  events: '<path d="M6 21V4M6 5h11l-2 4 2 4H6"/>',
+  athletes: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.6 3.5-5.5 7-5.5s6.2 1.9 7 5.5"/>',
+  teams: '<circle cx="9" cy="9" r="3"/><circle cx="17" cy="10" r="2.4"/><path d="M3.5 19c.6-3 2.8-4.7 5.5-4.7s4.9 1.7 5.5 4.7M15.5 14.6c2.6-.3 4.6 1 5.2 3.9"/>',
+  settings: '<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>'
+};
+const num = x => (x === null || x === undefined) ? '' : (Number.isInteger(+x) ? +x : (+x).toFixed(2));
+
+async function api(path, method = 'GET', body) {
+  const r = await fetch(path, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  let j = {}; try { j = await r.json(); } catch (e) { }
+  if (!r.ok) { const err = new Error(j.error || ('请求失败 ' + r.status)); err.status = r.status; throw err; }
+  return j;
+}
+function toast(msg, bad) { const t = $('#toast'); t.textContent = msg; t.className = bad ? 'bad' : ''; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', bad ? 4200 : 2200); }
+async function run(fn) { try { return await fn(); } catch (e) { if (e.status === 403) { toast(e.message, true); openLogin(); } else toast(e.message, true); } }
+
+function modal(title, html, wide) {
+  closeModal();
+  const bg = document.createElement('div'); bg.className = 'modal-bg'; bg.id = 'modal';
+  bg.innerHTML = `<div class="modal ${wide ? 'wide' : ''}"><h3>${title}</h3>${html}</div>`;
+  bg.addEventListener('mousedown', e => { if (e.target === bg) closeModal(); });
+  document.body.appendChild(bg); return bg.firstChild;
+}
+function closeModal() { $('#modal')?.remove(); }
+const isAdmin = () => ME === 'admin', canRec = () => !!ME;
+const dt = s => s ? s.slice(5, 16) : '';
+const toLocal = s => s ? s.replace(' ', 'T') : '';
+const fromLocal = s => s ? s.replace('T', ' ') : '';
+const needAdminHint = () => isAdmin() ? '' : `<div class="hint">当前为只读。需要修改数据请 <a href="#" data-act="login">登录</a>(管理员)。</div>`;
+
+/* ============ 全局事件 ============ */
+const ACT = {};
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  if (b.tagName === 'A') e.preventDefault();
+  const f = ACT[b.dataset.act]; if (f) run(() => f(b.dataset, b, e));
+});
+
+/* ============ 登录 ============ */
+function openLogin() {
+  const m = modal('登录', `<div class="f"><label>密码</label><input type="password" id="pw" autofocus></div>
+  <p class="mut sm">管理员:可编辑所有数据。录入员:仅可录入成绩、变更项目状态。</p>
+  <div class="row"><button class="pri" id="doLogin">登录</button><button onclick="closeModal()">取消</button></div>`);
+  const go = () => run(async () => { const r = await api('/api/login', 'POST', { password: $('#pw').value }); ME = r.role; closeModal(); toast('已登录:' + (ME === 'admin' ? '管理员' : '录入员')); await boot(true); });
+  $('#doLogin').onclick = go; $('#pw').onkeydown = e => { if (e.key === 'Enter') go(); }; setTimeout(() => $('#pw')?.focus(), 50);
+}
+ACT.login = openLogin;
+$('#loginBtn').onclick = () => ME ? run(async () => { await api('/api/logout', 'POST'); ME = null; await boot(true); toast('已退出'); }) : openLogin();
+$('#tvBtn').onclick = () => { document.body.classList.add('tv'); location.hash = '#/board'; render(); toast('大屏模式:点击右上角“退出大屏”返回'); };
+$('#tvx').onclick = () => document.body.classList.remove('tv');
+
+/* ============ 路由 ============ */
+const PAGES = { board: pageBoard, schedule: pageSchedule, events: pageEvents, event: pageEvent, athletes: pageAthletes, teams: pageTeams, settings: pageSettings };
+const NAV = [['board', '积分榜'], ['schedule', '时间表'], ['events', '项目'], ['athletes', '人员'], ['teams', '队伍分组'], ['settings', '设置']];
+async function render() {
+  const [, name = 'board', arg] = (location.hash || '#/board').split('/');
+  const key = PAGES[name] ? name : 'board';
+  const navHTML = NAV.map(([k, t]) => `<a href="#/${k}" class="${(key === k || (key === 'event' && k === 'events')) ? 'on' : ''}"><svg viewBox="0 0 24 24">${ICON[k]}</svg><span>${t}</span></a>`).join('');
+  $('#nav').innerHTML = navHTML; $('#tabbar').innerHTML = navHTML;
+  $('#ptitle').textContent = key === 'event' ? '项目详情' : NAV.find(n => n[0] === key)[1];
+  const nd = new Date(); $('#psub').innerHTML = `<b>${nd.getMonth() + 1}.${String(nd.getDate()).padStart(2, '0')}</b><span>周${'日一二三四五六'[nd.getDay()]}</span>`;
+  CUR = location.hash; $('#upd').style.display = 'none';
+  try { await PAGES[key](arg); } catch (e) { $('#app').innerHTML = `<div class="card">加载失败:${esc(e.message)}</div>`; }
+}
+window.addEventListener('hashchange', () => { closeModal(); render(); });
+async function boot(rerender) {
+  INFO = await api('/api/info'); ME = INFO.role; document.title = INFO.meet_name; $('#title').innerHTML = brandHTML(INFO.meet_name);
+  $('#who').textContent = ME === 'admin' ? '管理员' : ME === 'recorder' ? '录入员' : '游客'; $('#loginBtn').textContent = ME ? '退出' : '登录';
+  if (rerender !== false) await render();
+}
+let lastV = null;
+setInterval(async () => {
+  try {
+    const { v } = await api('/api/version'); if (lastV === null) { lastV = v; return; }
+    if (v !== lastV) {
+      const busy = $('#modal') || /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || '');
+      if (busy) { $('#upd').style.display = 'block'; } else { lastV = v; render(); }
+    }
+  } catch (e) { }
+}, 4000);
+$('#upd').onclick = async () => { lastV = (await api('/api/version')).v; render(); };
+api('/api/version').then(r => lastV = r.v).catch(() => { });
+
+/* ============ 积分榜 ============ */
+async function pageBoard() {
+  const b = await api('/api/board');
+  const hasTree = b.teams.some(t => t.parent_id);
+  const view = localStorage.bview || (hasTree ? 'top' : 'all');
+  let list = b.teams.filter(t => view === 'all' || (view === 'top' ? t.depth === 0 : !t.has_children));
+  list.sort((x, y) => y.total - x.total);
+  const max = Math.max(1, ...list.map(t => t.total));
+  let rank = 0, prev = null;
+  const rows = list.map((t, i) => { if (t.total !== prev) rank = i + 1; prev = t.total; return { ...t, rank }; });
+  $('#app').innerHTML = `
+  <div class="card tk"><div class="row"><h2 class="grow" style="margin:0">团体总分</h2>
+    <span class="mut sm">已结束 ${b.done_events} / ${b.total_events} 项</span>
+    ${hasTree ? `<select id="bview"><option value="top">顶层队伍(含下属)</option><option value="leaf">最底层队伍</option><option value="all">全部队伍</option></select>` : ''}
+    <a class="btn sm" href="/api/export/scores.csv">导出</a></div>
+    <div class="lanes">${rows.length ? rows.map((t, i) => `
+    <div class="lane" style="--c:${esc(t.color)};--w:${t.total / max * 100}%;--i:${i}" data-act="teamDetail" data-id="${t.id}">
+      <div class="lane-rank ${t.total && t.rank <= 3 ? 'm' + t.rank : ''}">${t.total ? t.rank : '–'}</div>
+      <div class="lane-main"><div class="lane-name"><b>${esc(t.name)}</b>
+        <span class="lane-meta"><span>名次分 ${t.pts}</span><span>参与分 ${t.part}</span><span>破纪录 ${t.bonus}</span></span></div>
+        <div class="track"><i class="run"></i></div></div>
+      <div class="lane-score ${t.total && t.rank === 1 ? 'lead' : ''}">${t.total}</div></div>`).join('') : '<p class="mut">还没有队伍。请到「队伍分组」创建。</p>'}</div></div>
+  <div class="card"><h2>项目成绩</h2>${b.events.length ? `<div class="reslist">${b.events.map(e => `
+    <div class="res" data-act="goEvent" data-id="${e.id}">
+      <div class="res-t"><b>${esc(e.name)}${esc(e.grp || '')}</b><span class="chip ${e.status}">${STAT[e.status]}</span><span class="mut sm">已有成绩 ${e.n_done} / ${e.n_entries}</span></div>
+      <div class="pods">${e.podium.map(p => `<div class="pod2"><span class="pn m${p.rank}">${p.rank}</span>
+        <div class="pbody"><div class="pname">${esc(p.name)} ${tag(p.team, p.color)}</div></div><b class="pv">${esc(p.value)}</b>${p.record ? '<span class="rec">破纪录</span>' : ''}</div>`).join('')}</div></div>`).join('')}</div>` : '<p class="mut">还没有录入成绩。</p>'}</div>`;
+  if ($('#bview')) { $('#bview').value = view; $('#bview').onchange = e => { localStorage.bview = e.target.value; render(); }; }
+  window.__board = b;
+}
+ACT.goEvent = d => location.hash = '#/event/' + d.id;
+ACT.teamDetail = d => {
+  const b = window.__board, id = +d.id, pm = {}; b.teams.forEach(t => pm[t.id] = t.parent_id);
+  const under = x => { let n = 0; while (x && n++ < 20) { if (x === id) return true; x = pm[x]; } return false; };
+  const items = b.breakdown.filter(r => under(r.team_id)).sort((x, y) => x.event.localeCompare(y.event));
+  const t = b.teams.find(t => t.id === id);
+  modal(esc(t.name) + ' 得分明细', `<div class="tw"><table><tr><th>项目</th><th>选手</th><th>名次</th><th>成绩</th><th>得分</th></tr>
+  ${items.map(r => `<tr><td>${esc(r.event)}</td><td>${esc(r.who)}</td><td>${r.rank}</td><td>${esc(r.value)}</td><td><b>${num(+r.points + +r.part + +r.bonus)}</b> <span class="mut sm">${r.part ? '(含参与' + r.part + ')' : ''}${r.bonus ? '(含纪录' + r.bonus + ')' : ''}</span></td></tr>`).join('') || '<tr><td colspan=5 class="mut">暂无得分</td></tr>'}</table></div>
+  <div class="row" style="margin-top:12px"><button onclick="closeModal()">关闭</button></div>`, true);
+};
+
+/* ============ 时间表 ============ */
+async function pageSchedule() {
+  const s = await api('/api/schedule'), wk = '日一二三四五六';
+  const groups = {}; s.events.forEach(e => (groups[e.start_time ? e.start_time.slice(0, 10) : '未安排时间'] ||= []).push(e));
+  const unit = e => e.kind === 'relay' ? '队' : '人';
+  $('#app').innerHTML = (s.conflicts.length ? `<div class="hint warn"><b>时间冲突 ${s.conflicts.length} 处</b>:同一运动员的项目时间重叠。<br>${s.conflicts.slice(0, 6).map(c => `${esc(c.name)}(${esc(c.team || '')})  ${esc(c.a)} ${c.at} 与 ${esc(c.b)} ${c.bt}`).join('<br>')}${s.conflicts.length > 6 ? '<br>…完整列表见「设置」页' : ''}</div>` : '') +
+    `<div class="card"><div class="row"><h2 class="grow" style="margin:0">全部赛程</h2><a class="btn sm" href="/api/export/schedule.csv">导出</a>${isAdmin() ? '<a class="btn sm" href="#/events">编辑项目</a>' : ''}</div>` +
+    (Object.keys(groups).map(day => `
+    <div class="day">${day === '未安排时间' ? '<span style="font-size:20px;font-weight:700;color:var(--tx)">未安排时间</span>' : `<span class="num">${day.slice(5).replace('-', '/')}</span><span>周${wk[new Date(day + 'T00:00').getDay()]}</span>`}</div>
+    <div class="tl">${groups[day].map(e => { const cur = e.status === 'running' || (e.status === 'scheduled' && e.start_time && s.now >= e.start_time && s.now <= (e.start_time.slice(0, 11) + e.end_time));
+      return `<div class="tl-row ${cur ? 'now' : ''} ${e.status === 'done' ? 'done' : ''}" data-act="goEvent" data-id="${e.id}">
+        <div class="tl-time">${e.start_time ? e.start_time.slice(11) : '—'}<small>${e.end_time ? '至 ' + e.end_time : ''}</small></div>
+        <div class="tl-rail"><i></i></div>
+        <div class="tl-body"><div class="row"><b class="tl-name">${esc(e.name)}${esc(e.grp || '')}</b><span class="chip">${KIND[e.kind]}</span>${cur ? '<span class="chip running">进行中</span>' : `<span class="chip ${e.status}">${STAT[e.status]}</span>`}</div>
+        <div class="meta mut sm"><span>${esc(e.venue || '场地待定')}</span><span>${e.n_entries} ${unit(e)}</span>${e.n_heats > 1 ? `<span>${e.n_heats} 组</span>` : ''}</div></div></div>`; }).join('')}</div>`).join('') || '<p class="mut">还没有项目。请到「项目」页添加。</p>') + '</div>';
+}
+
+/* ============ 项目列表 ============ */
+async function pageEvents() {
+  const evs = await api('/api/events');
+  $('#app').innerHTML = needAdminHint() + `<div class="card"><div class="row" style="margin-bottom:10px"><h2 class="grow" style="margin:0">项目管理(${evs.length})</h2>
+  ${isAdmin() ? `<button data-act="presets">+ 一键添加常用项目</button><button class="pri" data-act="evForm">+ 新建项目</button>` : ''}</div>
+  <div class="tw"><table><tr><th>项目</th><th>类型</th><th>性别</th><th>开始</th><th>场地</th><th>道数</th><th>报名</th><th>状态</th><th></th></tr>
+  ${evs.map(e => `<tr><td><a href="#/event/${e.id}"><b>${esc(e.name)}${esc(e.grp || '')}</b></a>${e.scored ? '' : ' <span class="chip">不计分</span>'}</td><td>${KIND[e.kind]}</td><td>${GEN[e.gender]}</td>
+  <td>${dt(e.start_time) || '—'}</td><td>${esc(e.venue || '')}</td><td>${e.kind === 'field' ? '—' : e.lanes}</td><td>${e.n_entries}</td><td><span class="chip ${e.status}">${STAT[e.status]}</span></td>
+  <td>${isAdmin() ? `<button class="sm" data-act="evForm" data-id="${e.id}">编辑</button>` : ''}</td></tr>`).join('') || '<tr><td colspan=9 class="mut">暂无项目</td></tr>'}</table></div></div>`;
+}
+ACT.presets = async () => {
+  modal('添加常用项目', `<p class="mut sm">将创建 100/200/400/800/1500 米、4×100 接力、跳远、铅球、跳高,按所选性别各一套。之后可逐项修改时间与场地。</p>
+  <div class="f"><label>性别</label><div><label><input type="checkbox" id="pm" checked> 男子</label> &nbsp; <label><input type="checkbox" id="pf" checked> 女子</label></div>
+  <label>组别后缀</label><input id="pg" placeholder="如:高中组(可空)"></div>
+  <div class="row"><button class="pri" id="ok">创建</button><button onclick="closeModal()">取消</button></div>`);
+  $('#ok').onclick = () => run(async () => {
+    const g = [$('#pm').checked && 'M', $('#pf').checked && 'F'].filter(Boolean);
+    const r = await api('/api/events/presets', 'POST', { genders: g, grp: $('#pg').value }); closeModal(); toast('已创建 ' + r.created + ' 个项目'); render();
+  });
+};
+ACT.evForm = async d => {
+  const e = d.id ? (await api('/api/events/' + d.id)).event : { kind: 'track', gender: 'X', duration: 20, lanes: 8, scored: 1, status: 'scheduled' };
+  modal(d.id ? '编辑项目' : '新建项目', `<form id="ef"><div class="f">
+  <label>名称</label><input name="name" required value="${esc(e.name || '')}" placeholder="如:男子100米">
+  <label>组别</label><input name="grp" value="${esc(e.grp || '')}" placeholder="可空,如:初一组">
+  <label>类型</label><select name="kind"><option value="track">径赛(按时间,越小越好)</option><option value="field">田赛(按距离/高度,越大越好)</option><option value="relay">接力(按队伍计时)</option></select>
+  <label>性别</label><select name="gender"><option value="X">不限/混合</option><option value="M">男</option><option value="F">女</option></select>
+  <label>开始时间</label><input type="datetime-local" name="start_time" value="${esc(toLocal(e.start_time))}">
+  <label>预计时长(分)</label><input type="number" name="duration" min="1" value="${e.duration}">
+  <label>场地</label><input name="venue" value="${esc(e.venue || '')}">
+  <label>跑道数</label><input type="number" name="lanes" min="1" max="12" value="${e.lanes}">
+  <label>状态</label><select name="status"><option value="scheduled">未开始</option><option value="running">进行中</option><option value="done">已结束</option></select>
+  <label>计入团体分</label><label><input type="checkbox" name="scored" ${e.scored ? 'checked' : ''}> 计分</label>
+  <label>名次分(可选)</label><input name="points" value="${esc((e.points_list || []).join(','))}" placeholder="留空用全局设置;如 9,7,6,5,4,3,2,1">
+  <label>现有纪录</label><input name="record_text" value="${esc(e.record_text || '')}" placeholder="如 12.34 或 1:05.20">
+  <label>纪录保持者</label><input name="record_holder" value="${esc(e.record_holder || '')}">
+  <label>破纪录加分</label><input name="bonus" type="number" step="any" value="${e.bonus ?? ''}" placeholder="留空用全局设置">
+  <label>备注</label><input name="note" value="${esc(e.note || '')}"></div>
+  <div class="row"><button class="pri">保存</button><button type="button" onclick="closeModal()">取消</button>
+  ${d.id ? '<span class="grow"></span><button type="button" class="bad" id="del">删除项目</button>' : ''}</div></form>`);
+  const f = $('#ef'); f.kind.value = e.kind; f.gender.value = e.gender; f.status.value = e.status;
+  f.onsubmit = ev => { ev.preventDefault(); run(async () => {
+    const o = Object.fromEntries(new FormData(f)); o.scored = f.scored.checked ? 1 : 0; o.start_time = fromLocal(o.start_time);
+    o.points_list = o.points ? o.points.split(/[,，\s]+/).filter(Boolean).map(Number) : null;
+    if (o.points_list?.some(isNaN)) throw new Error('名次分格式有误');
+    await api('/api/events' + (d.id ? '/' + d.id : ''), d.id ? 'PUT' : 'POST', o); closeModal(); toast('已保存'); render(); }); };
+  if ($('#del')) $('#del').onclick = () => confirm('确定删除该项目及其全部报名与成绩?') && run(async () => { await api('/api/events/' + d.id, 'DELETE'); closeModal(); location.hash = '#/events'; });
+};
+
+/* ============ 项目详情:分组跑道 + 报名 + 成绩录入 ============ */
+async function pageEvent(id) {
+  const d = await api('/api/events/' + id), ev = d.event, rows = d.entries;
+  const tab = sessionStorage['etab' + id] || (ev.status === 'scheduled' && !rows.some(r => r.status === 'ok') ? 'heats' : 'result');
+  const isRelay = ev.kind === 'relay', isField = ev.kind === 'field';
+  const who = r => isRelay ? esc(r.label ? r.team_name + ' ' + r.label : r.team_name) : esc(r.athlete_name);
+  const unit = isField ? '米' : '秒';
+  window.__ev = d;
+  $('#app').innerHTML = `<div class="card hero">
+    <div class="hero-top"><div class="grow"><h2 class="hero-name">${esc(ev.name)}${ev.grp ? `<small>${esc(ev.grp)}</small>` : ''}</h2>
+      <div class="row" style="margin-top:8px"><span class="chip">${KIND[ev.kind]}</span><span class="chip">${GEN[ev.gender]}</span>${ev.scored ? '' : '<span class="chip">不计团体分</span>'}</div></div>
+      <div class="row">${canRec() ? `<select id="st">${Object.entries(STAT).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>` : `<span class="chip ${ev.status}">${STAT[ev.status]}</span>`}
+      ${isAdmin() ? `<button class="sm" data-act="evForm" data-id="${ev.id}">编辑项目</button>` : ''}</div></div>
+    <div class="facts">
+      <div><b class="num">${ev.start_time ? dt(ev.start_time) : '未排时间'}</b><span>开始时间(约 ${ev.duration} 分钟)</span></div>
+      <div><b>${esc(ev.venue || '未指定')}</b><span>场地</span></div>
+      ${isField ? '' : `<div><b class="num">${ev.lanes}</b><span>跑道数</span></div>`}
+      <div><b class="num">${ev.scored ? d.points_table.join(' / ') : '—'}</b><span>名次分</span></div>
+      ${ev.record_text ? `<div><b class="num">${esc(ev.record_text)}</b><span>纪录${ev.record_holder ? ' · ' + esc(ev.record_holder) : ''}</span></div>` : ''}
+    </div></div>
+  <div class="tabs">${[['heats', '分组与跑道'], ['result', '成绩录入'], ['rank', '排名与得分']].map(([k, t]) => `<button class="${tab === k ? 'on' : ''}" data-act="etab" data-id="${id}" data-tab="${k}">${t}</button>`).join('')}</div>
+  <div id="tabbody"></div>`;
+  if ($('#st')) { $('#st').value = ev.status; $('#st').onchange = e => run(async () => { await api(`/api/events/${id}/status`, 'PUT', { status: e.target.value }); toast('状态已更新'); }); }
+  const body = $('#tabbody');
+
+  if (tab === 'heats') {
+    const byHeat = {}; rows.forEach(r => (byHeat[r.heat_id || 0] ||= []).push(r));
+    const maxLane = Math.max(ev.lanes, ...rows.map(r => r.lane || 0));
+    body.innerHTML = (isAdmin() ? `<div class="row" style="margin-bottom:12px"><button class="pri" data-act="addEntries" data-id="${id}">+ 添加报名</button>
+      <button data-act="genHeats" data-id="${id}">${d.heats.length ? '重新' : ''}生成分组${isField ? '顺序' : '与跑道'}</button><span class="mut sm">共 ${rows.length} ${isRelay ? '队' : '人'}</span></div>` : needAdminHint()) +
+      (d.heats.map(h => `<div class="card"><div class="row"><h3 class="grow" style="margin:0">${esc(h.name || '分组')} ${h.start_time ? '<span class="mut sm">' + dt(h.start_time) + '</span>' : ''}</h3>
+        ${isAdmin() ? `<button class="sm" data-act="heatEdit" data-id="${h.id}" data-name="${esc(h.name || '')}" data-t="${esc(h.start_time || '')}">改名/时间</button>` : ''}</div>
+        <div class="tw"><table><tr><th>${isField ? '顺序' : '跑道'}</th>${isRelay ? '' : '<th>号码</th>'}<th>${isRelay ? '队伍' : '姓名'}</th><th>队伍</th><th>报名成绩</th>${isAdmin() ? '<th></th>' : ''}</tr>
+        ${(byHeat[h.id] || []).sort((a, b) => (a.lane || 99) - (b.lane || 99)).map(r => `<tr><td>${isAdmin() ? `<select data-act="laneSet" data-id="${r.id}" data-h="${h.id}" class="lane">${Array.from({ length: Math.max(maxLane, rows.length) }, (_, i) => `<option ${r.lane === i + 1 ? 'selected' : ''}>${i + 1}</option>`).join('')}</select>` : `<b>${r.lane || '—'}</b>`}</td>
+        ${isRelay ? '' : `<td>${bibTag(r.bib)}</td>`}<td>${who(r)}</td><td>${tag(r.team_name, r.team_color)}</td><td>${isAdmin() ? `<input class="val" data-act="seedSet" data-id="${r.id}" value="${r.seed ?? ''}" placeholder="可空">` : (r.seed ?? '')}</td>
+        ${isAdmin() ? `<td><button class="sm bad" data-act="delEntry" data-id="${r.id}">移除</button></td>` : ''}</tr>`).join('')}</table></div></div>`).join('') || '') +
+      ((byHeat[0] || []).length ? `<div class="card"><h3>未分组 (${byHeat[0].length})</h3><div class="tw"><table>${byHeat[0].map(r => `<tr><td>${bibTag(r.bib)}</td><td>${who(r)}</td><td>${tag(r.team_name, r.team_color)}</td>${isAdmin() ? `<td><button class="sm bad" data-act="delEntry" data-id="${r.id}">移除</button></td>` : ''}</tr>`).join('')}</table></div></div>` : '') +
+      (!rows.length ? '<div class="card mut">还没有报名。' + (isAdmin() ? '点击「添加报名」。' : '') + '</div>' : '');
+    body.querySelectorAll('select.lane').forEach(s => s.onchange = () => run(async () => { await api('/api/entries/' + s.dataset.id, 'PUT', { heat_id: s.dataset.h, lane: s.value }); toast('已调整(若该位置有人则已互换)'); render(); }));
+    body.querySelectorAll('input[data-act=seedSet]').forEach(s => s.onchange = () => run(async () => { await api('/api/entries/' + s.dataset.id, 'PUT', { seed: s.value }); toast('已保存'); }));
+  }
+
+  if (tab === 'result') {
+    const canEdit = canRec();
+    body.innerHTML = (canEdit ? '' : `<div class="hint">登录(管理员或录入员)后才能录入成绩。<a href="#" data-act="login">登录</a></div>`) +
+      `<div class="card"><div class="row" style="margin-bottom:10px"><b class="grow">成绩单位:${isField ? '米(如 5.43)' : '秒(如 12.34 或 1:05.20)'} · 回车跳到下一行</b>
+      ${!isRelay && canEdit ? '<input id="bibq" placeholder="输入号码快速定位" style="width:140px" inputmode="numeric">' : ''}</div>
+      <div class="tw"><table id="rt"><tr><th>${isField ? '顺序' : '道'}</th>${isRelay ? '' : '<th>号码</th>'}<th>${isRelay ? '队伍' : '姓名'}</th><th class="c-team">队伍</th><th>成绩(${unit})</th><th>状态</th><th>名次</th><th>得分</th></tr>
+      ${rows.map(r => `<tr data-id="${r.id}" data-bib="${esc(r.bib || '')}"><td>${r.lane || ''}${r.heat_name && d.heats.length > 1 ? ' <span class="mut sm">' + esc(r.heat_name) + '</span>' : ''}</td>${isRelay ? '' : `<td>${bibTag(r.bib)}</td>`}<td>${who(r)}</td><td class="c-team">${tag(r.team_name, r.team_color)}</td>
+      <td>${canEdit ? `<input class="val v" inputmode="decimal" value="${r.status === 'ok' ? esc(r.value_text) : ''}" placeholder="${unit}">` : esc(r.value_text)}</td>
+      <td>${canEdit ? `<select class="s">${Object.entries(RES_ST).map(([k, v]) => `<option value="${k}" ${(r.status === k || (k === 'ok' && r.status === 'reg')) ? 'selected' : ''}>${v}</option>`).join('')}</select>` : (RES_ST[r.status] || '')}</td>
+      <td class="rk2"><b>${r.rank ?? ''}</b></td><td class="pt">${r.rank ? num(r.total) : ''}${r.record ? ' 🔥' : ''}</td></tr>`).join('') || '<tr><td colspan=8 class="mut">暂无报名</td></tr>'}</table></div></div>`;
+    if (canEdit) {
+      const save = tr => run(async () => {
+        const v = tr.querySelector('.v').value, s = tr.querySelector('.s').value;
+        try {
+          const res = await api(`/api/events/${id}/results`, 'POST', { items: [{ entry_id: +tr.dataset.id, value: v, status: s }] });
+          res.entries.forEach(x => { const t = $(`#rt tr[data-id="${x.id}"]`); if (!t) return; t.querySelector('.rk2').innerHTML = `<b>${x.rank ?? ''}</b>`; t.querySelector('.pt').textContent = x.rank ? num(x.total) + (x.record ? ' 🔥' : '') : ''; });
+          tr.classList.add('saved'); setTimeout(() => tr.classList.remove('saved'), 900);
+          if (v === '' && s === 'ok') tr.querySelector('.s').value = 'ok';
+        } catch (e) { tr.classList.add('err'); setTimeout(() => tr.classList.remove('err'), 2500); throw e; }
+      });
+      body.querySelectorAll('#rt tr[data-id]').forEach(tr => {
+        const inp = tr.querySelector('.v'), sel = tr.querySelector('.s');
+        inp.onchange = () => { if (inp.value.trim() && sel.value !== 'ok') sel.value = 'ok'; save(tr); };
+        sel.onchange = () => { if (sel.value !== 'ok') inp.value = ''; save(tr); };
+        inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); let n = tr.nextElementSibling; while (n && !n.querySelector('.v')) n = n.nextElementSibling; n?.querySelector('.v').focus(); } };
+        inp.onfocus = () => inp.select();
+      });
+      $('#bibq')?.addEventListener('keydown', e => { if (e.key !== 'Enter') return; const q = e.target.value.trim().replace(/^0+/, ''); const tr = [...body.querySelectorAll('#rt tr[data-bib]')].find(t => t.dataset.bib.replace(/^0+/, '') === q);
+        if (tr) { tr.scrollIntoView({ block: 'center' }); tr.querySelector('.v').focus(); e.target.value = ''; } else toast('本项目没有号码 ' + q, true); });
+    }
+  }
+
+  if (tab === 'rank') {
+    const ranked = rows.filter(r => r.rank !== null);
+    body.innerHTML = `<div class="card"><div class="tw"><table><tr><th>名次</th><th>${isRelay ? '队伍' : '姓名'}</th><th>队伍</th><th>成绩</th><th>名次分</th><th>参与分</th><th>纪录加分</th><th>合计</th></tr>
+    ${ranked.map(r => `<tr><td><b class="num m${r.rank}" style="font-size:24px">${r.rank}</b></td><td>${who(r)}</td><td>${tag(r.team_name, r.team_color)}</td><td><b>${esc(r.value_text)}</b> ${r.record ? '🔥破纪录' : ''}</td><td>${num(r.points)}</td><td>${num(r.part)}</td><td>${num(r.bonus)}</td><td><b>${num(r.total)}</b></td></tr>`).join('') || '<tr><td colspan=8 class="mut">暂无有效成绩</td></tr>'}</table></div>
+    ${rows.filter(r => r.rank === null && r.status !== 'reg').length ? `<p class="mut sm">无成绩:${rows.filter(r => r.rank === null && r.status !== 'reg').map(r => who(r) + '(' + r.status + ')').join('、')}</p>` : ''}
+    <p class="mut sm">说明:名次相同的选手平分所占名次的得分;参与分、破纪录加分见「设置」。</p></div>`;
+  }
+}
+ACT.etab = d => { sessionStorage['etab' + d.id] = d.tab; render(); };
+ACT.delEntry = async d => { if (!confirm('确定移除该报名?其成绩将一并删除。')) return; await api('/api/entries/' + d.id, 'DELETE'); render(); };
+ACT.heatEdit = d => {
+  modal('分组名称与时间', `<div class="f"><label>名称</label><input id="hn" value="${esc(d.name)}"><label>开始时间</label><input type="datetime-local" id="ht" value="${esc(toLocal(d.t))}"></div>
+  <div class="row"><button class="pri" id="ok">保存</button><button onclick="closeModal()">取消</button></div>`);
+  $('#ok').onclick = () => run(async () => { await api('/api/heats/' + d.id, 'PUT', { name: $('#hn').value, start_time: fromLocal($('#ht').value) }); closeModal(); render(); });
+};
+ACT.genHeats = d => {
+  const ev = window.__ev.event, has = window.__ev.heats.length;
+  modal('生成分组' + (ev.kind === 'field' ? '顺序' : '与跑道'), `${has ? '<div class="hint warn">将清除现有分组与跑道安排(成绩不受影响),重新生成。</div>' : ''}
+  <div class="f"><label>方式</label><select id="gm"><option value="random">随机抽签</option><option value="seed">按报名成绩(强者在最后一组、最佳跑道)</option></select>
+  ${ev.kind === 'field' ? '' : `<label>跑道数</label><input type="number" id="gl" min="1" max="12" value="${ev.lanes}"><label>组间隔(分)</label><input type="number" id="gg" min="0" value="5">`}</div>
+  <p class="mut sm">跑道按 4、5、3、6、2、7、1、8 的优先顺序分配;人数少时只用中间的跑道。生成后可在列表里调整(选中已有人的跑道会与其互换)。</p>
+  <div class="row"><button class="pri" id="ok">生成</button><button onclick="closeModal()">取消</button></div>`);
+  $('#ok').onclick = () => run(async () => { const r = await api(`/api/events/${d.id}/heats/generate`, 'POST', { mode: $('#gm').value, lanes: $('#gl')?.value, gap: $('#gg')?.value }); closeModal(); toast('已生成 ' + r.heats + ' 组'); render(); });
+};
+ACT.addEntries = async d => {
+  const ev = window.__ev.event;
+  if (ev.kind === 'relay') {
+    const teams = await api('/api/teams');
+    modal('添加接力队', `<div class="f"><label>队伍</label><select id="rt">${teams.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>
+    <label>队标识</label><input id="rl" placeholder="如 A队(同一队多组参赛时区分)"><label>队员</label><input id="rm" placeholder="姓名,用顿号分隔(可空)"></div>
+    <div class="row"><button class="pri" id="ok">添加</button><button onclick="closeModal()">取消</button></div>`);
+    $('#ok').onclick = () => run(async () => { await api(`/api/events/${d.id}/entries`, 'POST', { team_id: $('#rt').value, label: $('#rl').value, members: $('#rm').value }); closeModal(); render(); });
+    return;
+  }
+  const [ath, teams] = await Promise.all([api('/api/athletes'), api('/api/teams')]);
+  const have = new Set(window.__ev.entries.map(r => r.athlete_id));
+  const m = modal('添加报名 — ' + esc(ev.name), `<div class="row" style="margin-bottom:8px"><input id="aq" placeholder="搜索姓名/号码" class="grow"><select id="at"><option value="">全部队伍</option>${teams.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select></div>
+  <div id="alist" style="max-height:48vh;overflow:auto;border:1px solid var(--bd);border-radius:8px"></div>
+  <div class="row" style="margin-top:10px"><label><input type="checkbox" id="af"> 忽略性别/项目数限制</label><span class="grow"></span><span id="acnt" class="mut sm"></span><button class="pri" id="ok">添加所选</button><button onclick="closeModal()">关闭</button></div>`, true);
+  const sel = new Set();
+  const draw = () => {
+    const q = $('#aq').value.trim(), t = $('#at').value;
+    const list = ath.filter(a => !have.has(a.id) && (!q || a.name.includes(q) || (a.bib || '').includes(q)) && (!t || String(a.team_id) === t) && (ev.gender === 'X' || a.gender === ev.gender)).slice(0, 200);
+    $('#alist').innerHTML = `<table>${list.map(a => `<tr><td style="width:30px"><input type="checkbox" data-a="${a.id}" ${sel.has(a.id) ? 'checked' : ''}></td><td>${bibTag(a.bib)}</td><td>${esc(a.name)}</td><td>${GEN[a.gender]}</td><td>${tag(a.team_name, a.team_color)}</td><td class="mut sm">已报 ${a.n_events} 项</td></tr>`).join('') || '<tr><td class="mut">无可选人员</td></tr>'}</table>`;
+    $('#alist').querySelectorAll('input[data-a]').forEach(c => c.onchange = () => { c.checked ? sel.add(+c.dataset.a) : sel.delete(+c.dataset.a); $('#acnt').textContent = '已选 ' + sel.size; });
+  };
+  $('#aq').oninput = draw; $('#at').onchange = draw; draw();
+  $('#ok').onclick = () => run(async () => {
+    if (!sel.size) return toast('请先勾选人员', true);
+    const r = await api(`/api/events/${d.id}/entries`, 'POST', { athlete_ids: [...sel], force: $('#af').checked });
+    toast('已添加 ' + r.added + ' 人' + (r.warnings.length ? ';未添加:' + r.warnings.join(';') : ''), r.warnings.length > 0); closeModal(); render();
+  });
+};
+
+/* ============ 人员 ============ */
+async function pageAthletes() {
+  const f = JSON.parse(sessionStorage.af || '{}');
+  const qs = new URLSearchParams(Object.entries(f).filter(([, v]) => v)).toString();
+  const [teams, ath, grades] = await Promise.all([api('/api/teams'), api('/api/athletes?' + qs), api('/api/grades')]);
+  const adm = isAdmin();
+  $('#app').innerHTML = needAdminHint() + `<div class="card"><div class="row" style="margin-bottom:10px"><h2 class="grow" style="margin:0">人员(${ath.length})</h2>
+  ${adm ? `<button data-act="athForm">+ 新增</button><button data-act="athImport">批量导入</button><button data-act="bibs">自动编号</button><button data-act="autoTeam">自动均衡分队</button>` : ''}<a class="btn sm" href="/api/export/athletes.csv">导出</a></div>
+  <div class="row" style="margin-bottom:10px"><input id="q" placeholder="搜索姓名/号码" value="${esc(f.q || '')}" style="width:150px">
+    <select id="fgr"><option value="">全部年级</option>${grades.map(g => `<option>${esc(g)}</option>`).join('')}</select>
+    <select id="ft"><option value="">全部队伍</option>${teams.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>
+    <select id="fg"><option value="">男女不限</option><option value="M">男</option><option value="F">女</option></select><label><input type="checkbox" id="fu" ${f.unassigned ? 'checked' : ''}> 仅未分队</label></div>
+  ${adm ? `<div class="row" style="margin-bottom:10px;padding:8px 10px;background:var(--row);border-radius:8px"><span class="sm">已选 <b id="sc">0</b> 人 →</span>
+    <select id="bt"><option value="">改队伍…</option><option value="0">(取消分队)</option>${teams.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select><button id="bg" class="sm">应用</button>
+    <input id="bgr" list="gl" placeholder="设置年级" style="width:110px"><datalist id="gl">${grades.map(g => `<option>${esc(g)}</option>`).join('')}</datalist><button id="bgb" class="sm">应用</button>
+    <span class="grow"></span><button id="bdel" class="sm bad">删除所选</button></div>` : ''}
+  <div class="tw"><table><tr>${adm ? '<th><input type="checkbox" id="all"></th>' : ''}<th>号码</th><th>姓名</th><th>性别</th><th>年级</th><th>队伍</th><th>报名项目</th><th></th></tr>
+  ${ath.slice(0, 400).map(a => `<tr>${adm ? `<td><input type="checkbox" class="ck" value="${a.id}"></td>` : ''}<td>${bibTag(a.bib)}</td><td><b>${esc(a.name)}</b></td><td>${GEN[a.gender]}</td><td>${esc(a.grade || '')}</td><td>${tag(a.team_name, a.team_color)}</td>
+  <td class="sm">${a.event_names ? esc(a.event_names) : '<span class="mut">未报名</span>'}</td><td style="white-space:nowrap">${adm ? `<button class="sm" data-act="athForm" data-id="${a.id}">编辑</button>` : ''}</td></tr>`).join('') || '<tr><td colspan=8 class="mut">没有匹配的人员</td></tr>'}</table></div>${ath.length > 400 ? '<p class="mut sm">仅显示前 400 人,请用搜索缩小范围。</p>' : ''}</div>`;
+  $('#ft').value = f.team_id || ''; $('#fg').value = f.gender || ''; $('#fgr').value = f.grade || '';
+  const apply = () => { sessionStorage.af = JSON.stringify({ q: $('#q').value, team_id: $('#ft').value, gender: $('#fg').value, grade: $('#fgr').value, unassigned: $('#fu').checked ? 1 : '' }); render(); };
+  ['q', 'ft', 'fg', 'fgr', 'fu'].forEach(i => $('#' + i).onchange = apply);
+  if (adm) {
+    const sel = () => [...document.querySelectorAll('.ck:checked')].map(c => +c.value);
+    const cnt = () => $('#sc').textContent = sel().length;
+    document.querySelectorAll('.ck').forEach(c => c.onchange = cnt);
+    $('#all').onchange = e => { document.querySelectorAll('.ck').forEach(c => c.checked = e.target.checked); cnt(); };
+    $('#bg').onclick = () => run(async () => { const ids = sel(); if (!ids.length || $('#bt').value === '') return toast('请先勾选人员并选择队伍', true);
+      await api('/api/athletes/bulk-update', 'POST', { ids, team_id: +$('#bt').value || null }); toast('已修改 ' + ids.length + ' 人的队伍'); render(); });
+    $('#bgb').onclick = () => run(async () => { const ids = sel(); if (!ids.length) return toast('请先勾选人员', true);
+      await api('/api/athletes/bulk-update', 'POST', { ids, grade: $('#bgr').value }); toast('已修改 ' + ids.length + ' 人的年级'); render(); });
+    $('#bdel').onclick = () => run(async () => { const ids = sel(); if (!ids.length) return toast('请先勾选人员', true);
+      if (!confirm(`确定删除所选 ${ids.length} 人?其报名与成绩将一并删除,且无法恢复。`)) return;
+      await api('/api/athletes/delete-many', 'POST', { ids }); toast('已删除'); render(); });
+  }
+}
+ACT.athForm = async d => {
+  const [teams, list, events, grades] = await Promise.all([api('/api/teams'), d.id ? api('/api/athletes') : [], api('/api/events'), api('/api/grades')]);
+  const a = d.id ? list.find(x => x.id == d.id) : { gender: 'M', event_ids: [] };
+  const evs = events.filter(e => e.kind !== 'relay'), have = new Set(a.event_ids);
+  modal(d.id ? '编辑人员 — ' + esc(a.name) : '新增人员', `<form id="af"><div class="f">
+  <label>姓名</label><input name="name" required value="${esc(a.name || '')}">
+  <label>性别</label><select name="gender"><option value="M">男</option><option value="F">女</option></select>
+  <label>年级</label><input name="grade" list="gl2" value="${esc(a.grade || '')}" placeholder="如:高一"><datalist id="gl2">${grades.map(g => `<option>${esc(g)}</option>`).join('')}</datalist>
+  <label>班级/队伍</label><select name="team_id"><option value="">(未分队)</option>${teams.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>
+  <label>号码</label><input name="bib" value="${esc(a.bib || '')}">
+  <label>备注</label><input name="note" value="${esc(a.note || '')}"></div>
+  <div class="row" style="margin-bottom:6px"><b>报名项目</b><span class="mut sm" id="ecnt"></span><span class="grow"></span><span class="mut sm">接力项目请在项目页按队伍报名</span></div>
+  <div style="max-height:34vh;overflow:auto;border:1px solid var(--bd);border-radius:8px;padding:6px 10px" id="evl">
+  ${evs.map(e => `<label style="display:flex;gap:8px;align-items:center;padding:4px 0" data-g="${e.gender}"><input type="checkbox" class="ec" value="${e.id}" ${have.has(e.id) ? 'checked' : ''}>
+    <span class="grow">${esc(e.name)}${esc(e.grp || '')}</span><span class="mut sm">${dt(e.start_time) || '未排时间'}</span><span class="chip">${GEN[e.gender]}</span></label>`).join('') || '<span class="mut">还没有项目,请先到「项目」页添加。</span>'}</div>
+  <div class="row" style="margin-top:14px"><button class="pri">保存</button><button type="button" onclick="closeModal()">取消</button>${d.id ? '<span class="grow"></span><button type="button" class="bad" id="del">删除此人</button>' : ''}</div></form>`, true);
+  const f = $('#af'); f.gender.value = a.gender; f.team_id.value = a.team_id || '';
+  const mark = () => { const g = f.gender.value; let n = 0;
+    f.querySelectorAll('.ec').forEach(c => { const l = c.closest('label'), bad = l.dataset.g !== 'X' && l.dataset.g !== g; l.style.opacity = bad ? .5 : 1; l.title = bad ? '项目性别与选手不符' : ''; if (c.checked) n++; });
+    $('#ecnt').textContent = `已选 ${n} 项`; };
+  f.gender.onchange = mark; f.querySelectorAll('.ec').forEach(c => c.onchange = mark); mark();
+  f.onsubmit = e => { e.preventDefault(); run(async () => {
+    const o = Object.fromEntries(new FormData(f)); delete o.undefined;
+    const ids = [...f.querySelectorAll('.ec:checked')].map(c => +c.value);
+    let id = d.id;
+    if (id) await api('/api/athletes/' + id, 'PUT', o); else id = (await api('/api/athletes', 'POST', o)).id;
+    let r;
+    try { r = await api(`/api/athletes/${id}/events`, 'PUT', { event_ids: ids }); }
+    catch (err) { if (!err.message.includes('将一并删除')) throw err; if (!confirm(err.message + '\n\n确定继续吗?')) return;
+      r = await api(`/api/athletes/${id}/events`, 'PUT', { event_ids: ids, confirm_remove: true }); }
+    closeModal(); toast('已保存' + (r.warnings.length ? '。注意:' + r.warnings.join(';') : ''), r.warnings.length > 0); render(); }); };
+  if ($('#del')) $('#del').onclick = () => confirm('删除该人员及其全部报名/成绩?') && run(async () => { await api('/api/athletes/' + d.id, 'DELETE'); closeModal(); render(); });
+};
+ACT.athImport = () => {
+  modal('批量导入人员(可同时导入报名项目)', `
+  <p class="sm" style="margin-top:0">从 Excel 复制整块表格粘贴到下面,或选择 CSV 文件。<b>第一行写表头</b>,列顺序任意:</p>
+  <p class="sm"><code>姓名</code> <code>性别</code> <code>年级</code> <code>班级</code>(或队伍) <code>号码</code> <code>项目</code> <code>备注</code>(只有“姓名”必填)</p>
+  <ul class="sm mut" style="margin:6px 0 10px;padding-left:20px"><li>“项目”列可填多个,用 <b>、</b> 或 ; 分隔,如:<code>100米、跳远</code>。系统按选手性别自动补“男子/女子”,也可写全名(如 <code>男子100米</code>);同名项目有组别时写 <code>男子100米高一组</code>。</li>
+  <li>已存在的人员(号码相同,或姓名+队伍相同)会<b>更新</b>并追加项目,不会重复创建。</li>
+  <li>没写表头时按顺序:姓名,性别,队伍,号码,年级,项目,备注。</li></ul>
+  <div class="row" style="margin-bottom:8px"><input type="file" id="imf" accept=".csv,.txt,.tsv"><a href="#" data-act="tpl">下载模板</a></div>
+  <textarea id="tx" rows="9" style="width:100%;font-family:monospace;font-size:13px" placeholder="姓名,性别,年级,班级,号码,项目&#10;张三,男,高一,高一(1)班,001,100米、跳远&#10;李四,女,高一,高一(2)班,002,100米、铅球"></textarea>
+  <div class="row" style="margin-top:10px"><label><input type="checkbox" id="ct" checked> 自动创建不存在的队伍</label><label><input type="checkbox" id="ue" checked> 已存在则更新</label><span class="grow"></span><button class="pri" id="ok">导入</button><button onclick="closeModal()">取消</button></div>
+  <div id="imr"></div>`, true);
+  $('#imf').onchange = async e => { const buf = await e.target.files[0].arrayBuffer(); let t;
+    try { t = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (x) { t = new TextDecoder('gbk').decode(buf); }   // Excel 中文 CSV 常为 GBK
+    $('#tx').value = t; };
+  $('#ok').onclick = () => run(async () => {
+    const r = await api('/api/athletes/import', 'POST', { text: $('#tx').value, create_teams: $('#ct').checked, update_existing: $('#ue').checked });
+    const msgs = [...r.skipped.map(x => '✗ ' + x), ...r.warnings.map(x => '! ' + x)];
+    $('#imr').innerHTML = `<div class="card" style="margin:12px 0 0;background:var(--row)"><b>导入完成:</b>新增 ${r.imported} 人,更新 ${r.updated} 人,新建队伍 ${r.new_teams} 支,新增报名 ${r.registered} 项。
+    ${msgs.length ? `<div class="sm" style="margin-top:8px;max-height:24vh;overflow:auto">${msgs.map(esc).join('<br>')}</div>` : ''}</div>`;
+    toast('导入完成'); });
+};
+ACT.tpl = () => {
+  const csv = '﻿姓名,性别,年级,班级,号码,项目,备注\n张三,男,高一,高一(1)班,001,100米、跳远,\n李四,女,高一,高一(2)班,002,100米、铅球、800米,\n';
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = '人员导入模板.csv'; a.click();
+};
+ACT.bibs = () => {
+  modal('自动编号', `<div class="f"><label>起始号</label><input id="bs" type="number" value="1"><label>位数</label><input id="bp" type="number" value="3"><label>范围</label><select id="bo"><option value="">仅给无号码者编号</option><option value="1">全部重新编号</option></select></div>
+  <p class="mut sm">按队伍顺序、性别、姓名排序依次编号。</p><div class="row"><button class="pri" id="ok">编号</button><button onclick="closeModal()">取消</button></div>`);
+  $('#ok').onclick = () => run(async () => { const r = await api('/api/athletes/assign-bibs', 'POST', { start: +$('#bs').value, pad: +$('#bp').value, overwrite: !!$('#bo').value }); closeModal(); toast('已编号 ' + r.assigned + ' 人'); render(); });
+};
+ACT.autoTeam = async () => {
+  const teams = await api('/api/teams');
+  modal('自动均衡分队', `<p class="mut sm">把人员随机分配到所选队伍,尽量使各队人数、男女数量均衡。</p>
+  ${teams.map(t => `<div><label><input type="checkbox" class="atc" value="${t.id}"> ${tag(t.name, t.color)} <span class="mut sm">现有 ${t.members} 人</span></label></div>`).join('')}
+  <div style="margin:10px 0"><label><input type="checkbox" id="ou" checked> 仅分配尚未分队的人员</label><br><label><input type="checkbox" id="bg" checked> 按性别均衡</label></div>
+  <div class="row"><button class="pri" id="ok">开始分配</button><button onclick="closeModal()">取消</button></div>`);
+  $('#ok').onclick = () => run(async () => { const ids = [...document.querySelectorAll('.atc:checked')].map(c => +c.value);
+    if (!$('#ou').checked && !confirm('将重新分配所有人员(包括已分队者),确定吗?')) return;
+    const r = await api('/api/teams/auto-assign', 'POST', { team_ids: ids, only_unassigned: $('#ou').checked, balance_gender: $('#bg').checked }); closeModal(); toast('已分配 ' + r.assigned + ' 人'); render(); });
+};
+
+/* ============ 队伍 ============ */
+async function pageTeams() {
+  const teams = await api('/api/teams'), kids = {}; teams.forEach(t => (kids[t.parent_id || 0] ||= []).push(t));
+  const ids = new Set(teams.map(t => t.id)); teams.forEach(t => { if (t.parent_id && !ids.has(t.parent_id)) (kids[0] ||= []).push(t); });
+  const sub = (t, depth, seen = new Set()) => { if (seen.has(t.id)) return ''; seen.add(t.id);
+    return `<tr><td class="tree-${Math.min(depth, 3)}">${depth ? '└ ' : ''}${tag(t.name, t.color)}</td><td>${t.members} 人</td>
+    <td>${isAdmin() ? `<button class="sm" data-act="teamForm" data-id="${t.id}">编辑</button> <button class="sm" data-act="teamForm" data-parent="${t.id}">+ 下级</button>` : ''} <a class="btn sm" href="#/athletes" data-act="viewMembers" data-id="${t.id}">查看成员</a></td></tr>` + (kids[t.id] || []).map(c => sub(c, depth + 1, seen)).join(''); };
+  $('#app').innerHTML = needAdminHint() + `<div class="card"><div class="row" style="margin-bottom:10px"><h2 class="grow" style="margin:0">队伍分组</h2>
+  ${isAdmin() ? `<button data-act="autoTeam">自动均衡分队</button><button class="pri" data-act="teamForm">+ 新建队伍</button>` : ''}</div>
+  <p class="mut sm">队伍支持层级:例如「年级 → 班级」,或「红队/蓝队 → 班级」。运动员归属最底层队伍,积分榜可按顶层汇总或按底层查看。</p>
+  <div class="tw"><table><tr><th>队伍</th><th>直属人数</th><th></th></tr>${(kids[0] || []).map(t => sub(t, 0)).join('') || '<tr><td colspan=3 class="mut">还没有队伍</td></tr>'}</table></div></div>`;
+}
+ACT.viewMembers = d => { sessionStorage.af = JSON.stringify({ team_id: d.id }); location.hash = '#/athletes'; };
+ACT.teamForm = async d => {
+  const teams = await api('/api/teams'), t = d.id ? teams.find(x => x.id == d.id) : { color: '#2563eb', parent_id: d.parent || '' };
+  modal(d.id ? '编辑队伍' : '新建队伍', `<form id="tf"><div class="f"><label>名称</label><input name="name" required value="${esc(t.name || '')}"><label>颜色</label><input type="color" name="color" value="${esc(t.color)}">
+  <label>上级队伍</label><select name="parent_id"><option value="">(无,顶层)</option>${teams.filter(x => x.id != d.id).map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div>
+  <div class="row"><button class="pri">保存</button><button type="button" onclick="closeModal()">取消</button>${d.id ? '<span class="grow"></span><button type="button" class="bad" id="del">删除</button>' : ''}</div></form>`);
+  const f = $('#tf'); f.parent_id.value = t.parent_id || '';
+  f.onsubmit = e => { e.preventDefault(); run(async () => { await api('/api/teams' + (d.id ? '/' + d.id : ''), d.id ? 'PUT' : 'POST', Object.fromEntries(new FormData(f))); closeModal(); render(); }); };
+  if ($('#del')) $('#del').onclick = () => confirm('删除队伍?其成员将变为未分队,接力报名一并删除。') && run(async () => { await api('/api/teams/' + d.id, 'DELETE'); closeModal(); render(); });
+};
+
+/* ============ 设置 ============ */
+async function pageSettings() {
+  if (!isAdmin()) { $('#app').innerHTML = `<div class="card"><p>设置页仅管理员可用。</p><button class="pri" data-act="login">管理员登录</button></div>`; return; }
+  const [S, sch, lg] = await Promise.all([api('/api/settings'), api('/api/schedule'), api('/api/log')]);
+  const urls = INFO.urls || [];
+  $('#app').innerHTML = `
+  <div class="card"><h2>其他设备如何访问</h2><p class="mut sm">手机/平板/电脑连接<b>同一个 Wi-Fi / 局域网</b>,在浏览器输入下面任一地址(或扫码)。若打不开,请检查主机防火墙是否放行端口。</p>
+  <div class="row" style="align-items:flex-start">${urls.map(u => `<div style="text-align:center"><div><b>${esc(u)}</b></div><img src="/api/qr.svg?u=${encodeURIComponent(u)}" width="130" height="130" alt="" onerror="this.remove()"></div>`).join('') || '<span class="mut">未检测到局域网地址</span>'}</div></div>
+  <form id="sf" class="card"><h2>赛事与计分规则</h2><div class="f">
+    <label>赛事名称</label><input name="meet_name" value="${esc(S.meet_name)}">
+    <label>个人名次分</label><input name="points_individual" value="${S.points_individual.join(',')}" placeholder="第1名,第2名,…(逗号分隔)">
+    <label>接力名次分</label><input name="points_relay" value="${S.points_relay.join(',')}">
+    <label>完赛参与分</label><input type="number" step="any" name="participation" value="${S.participation}">
+    <label>破纪录加分</label><input type="number" step="any" name="record_bonus" value="${S.record_bonus}">
+    <label>每人最多报名</label><input type="number" name="max_events" value="${S.max_events}">
+    <label>默认跑道数</label><input type="number" name="lanes" value="${S.lanes}">
+    <label>分组间隔(分)</label><input type="number" name="heat_gap" value="${S.heat_gap}"></div>
+    <p class="mut sm">名次并列时,并列者平分所占名次的得分(如两人并列第 2:(7+6)/2=6.5)。名次分超出名单的名次得 0 分。可在项目里单独覆盖。</p>
+    <button class="pri">保存规则</button></form>
+  <form id="pf" class="card"><h2>账号密码</h2><div class="f"><label>管理员密码</label><input type="password" name="admin_password" placeholder="不修改请留空(至少4位)" autocomplete="new-password">
+    <label>录入员密码</label><input type="password" name="recorder_password" placeholder="${INFO.has_recorder ? '已设置,留空不改' : '未设置(未设置则无录入员账号)'}" autocomplete="new-password"></div>
+    <p class="mut sm">录入员只能录入成绩与改项目状态,适合分发给各赛场裁判。</p><div class="row"><button class="pri">保存密码</button>${INFO.has_recorder ? '<button type="button" id="clr">取消录入员账号</button>' : ''}</div></form>
+  <div class="card"><h2>时间冲突检查</h2>${sch.conflicts.length ? `<div class="tw"><table><tr><th>运动员</th><th>队伍</th><th>冲突项目</th></tr>${sch.conflicts.map(c => `<tr><td>${esc(c.name)} ${esc(c.bib || '')}</td><td>${esc(c.team || '')}</td><td>${esc(c.a)} (${c.at}) ⇄ ${esc(c.b)} (${c.bt})</td></tr>`).join('')}</table></div>` : '<p class="mut">未发现冲突。</p>'}</div>
+  <div class="card"><h2>数据导出与备份</h2><div class="row"><a class="btn" href="/api/export/results.csv">项目成绩明细 CSV</a><a class="btn" href="/api/export/scores.csv">团体总分 CSV</a><a class="btn" href="/api/export/schedule.csv">时间表 CSV</a><a class="btn" href="/api/export/athletes.csv">人员名单 CSV</a><a class="btn pri" href="/api/backup">下载数据库备份</a></div>
+  <p class="mut sm">所有数据保存在主机 data/meet.db;比赛期间可定期点击“下载数据库备份”,或直接复制该文件。</p></div>
+  <div class="card"><h2>演示与重置</h2><div class="row"><button id="demo">载入演示数据(试用)</button><button class="bad" id="reset">清空全部数据</button></div><p class="mut sm">清空前会自动在 data/backups 留一份备份。</p></div>
+  <div class="card"><h2>操作日志</h2><div class="tw"><table>${lg.map(l => `<tr><td class="sm mut">${l.ts}</td><td>${l.role}</td><td>${esc(l.action)}</td><td class="sm">${esc(l.detail)}</td></tr>`).join('') || '<tr><td class="mut">暂无</td></tr>'}</table></div></div>`;
+  $('#sf').onsubmit = e => { e.preventDefault(); run(async () => { const o = Object.fromEntries(new FormData(e.target));
+    ['points_individual', 'points_relay'].forEach(k => { o[k] = o[k].split(/[,，\s]+/).filter(Boolean).map(Number); if (o[k].some(isNaN)) throw new Error('名次分格式有误'); });
+    await api('/api/settings', 'PUT', o); toast('已保存'); await boot(false); }); };
+  $('#pf').onsubmit = e => { e.preventDefault(); run(async () => { const o = Object.fromEntries(new FormData(e.target)); if (!o.admin_password && !o.recorder_password) return toast('未填写新密码', true);
+    await api('/api/settings', 'PUT', o); toast('密码已更新'); e.target.reset(); await boot(); }); };
+  if ($('#clr')) $('#clr').onclick = () => run(async () => { await api('/api/settings', 'PUT', { clear_recorder_password: 1 }); await boot(); });
+  $('#demo').onclick = () => run(async () => { await api('/api/demo', 'POST'); toast('已载入演示数据'); location.hash = '#/board'; });
+  $('#reset').onclick = () => { if (prompt('此操作将清空所有队伍、人员、项目与成绩。\n如确认,请输入:确认清空') === '确认清空') run(async () => { await api('/api/reset', 'POST', { confirm: 'RESET' }); toast('已清空'); render(); }); };
+}
+
+boot();
+</script>
+</body>
+</html>
