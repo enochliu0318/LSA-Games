@@ -18,7 +18,7 @@ DB_PATH = os.path.join(DATA, 'meet.db')
 app = Flask(__name__, static_folder=os.path.join(BASE, 'static'), static_url_path='/static')
 app.json.ensure_ascii = False
 STATE = {'v': int(time.time() * 1000)}      # 数据版本号:任何写操作后递增,前端据此自动刷新
-SESS = {}                                   # token -> role
+SESS = {}                                   # token -> {'role','user','name','uid'}
 
 # ----------------------------------------------------------------- 数据库
 SCHEMA = """
@@ -47,6 +47,12 @@ CREATE TABLE IF NOT EXISTS entries(
 CREATE UNIQUE INDEX IF NOT EXISTS ux_entry_ath ON entries(event_id, athlete_id) WHERE athlete_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS ix_entry_event ON entries(event_id);
 CREATE TABLE IF NOT EXISTS log(id INTEGER PRIMARY KEY, ts TEXT, role TEXT, action TEXT, detail TEXT);
+CREATE TABLE IF NOT EXISTS recorders(
+  id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, name TEXT, pw TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS recorder_events(
+  recorder_id INTEGER NOT NULL REFERENCES recorders(id) ON DELETE CASCADE,
+  event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  PRIMARY KEY(recorder_id, event_id));
 """
 
 DEFAULTS = {
@@ -124,9 +130,16 @@ def check_pw(pw, stored):
     return secrets.compare_digest(hash_pw(pw, salt), stored)
 
 
-def role():
+def sess():
     return SESS.get(request.cookies.get('tok') or request.headers.get('X-Token'))
 
+def role():
+    s = sess()
+    return s['role'] if s else None
+
+def who():
+    s = sess()
+    return s['user'] if s else '-'
 
 LEVEL = {'recorder': 1, 'admin': 2}
 
@@ -161,19 +174,24 @@ def _err(e):
 
 
 @app.post('/api/login')
+@app.post('/api/login')
 def login():
-    pw = (request.get_json(silent=True) or {}).get('password', '')
-    r = None
-    if check_pw(pw, get_raw('pw_admin')):
-        r = 'admin'
-    elif get_raw('pw_recorder') and check_pw(pw, get_raw('pw_recorder')):
-        r = 'recorder'
-    if not r:
+    p = request.get_json(silent=True) or {}
+    u, pw = (p.get('username') or '').strip(), p.get('password', '')
+    sd = None
+    if u == '' or u.lower() == 'admin':
+        if check_pw(pw, get_raw('pw_admin')):
+            sd = dict(role='admin', user='admin', name='管理员', uid=None)
+    else:
+        r = db().execute("SELECT * FROM recorders WHERE username=?", (u,)).fetchone()
+        if r and check_pw(pw, r['pw']):
+            sd = dict(role='recorder', user=r['username'], name=r['name'] or r['username'], uid=r['id'])
+    if not sd:
         time.sleep(0.6)
-        return jsonify(error='密码错误'), 401
+        return jsonify(error='账号或密码错误'), 401
     tok = secrets.token_urlsafe(16)
-    SESS[tok] = r
-    resp = jsonify(role=r)
+    SESS[tok] = sd
+    resp = jsonify(role=sd['role'], user=sd['user'], name=sd['name'])
     resp.set_cookie('tok', tok, max_age=7 * 86400, httponly=True, samesite='Lax')
     return resp
 
@@ -309,7 +327,12 @@ def index():
 def info():
     S = settings()
     port = request.host.split(':')[-1] if ':' in request.host else '80'
+    sd = sess()
+    mine = []
+    if sd and sd['role'] == 'recorder':
+        mine = [r['event_id'] for r in db().execute("SELECT event_id FROM recorder_events WHERE recorder_id=?", (sd['uid'],))]
     return jsonify(meet_name=S['meet_name'], version=STATE['v'], role=role(),
+                   user=sd['user'] if sd else None, name=sd['name'] if sd else None, my_events=mine,
                    urls=['http://%s:%s' % (ip, port) for ip in lan_ips()],
                    has_recorder=bool(get_raw('pw_recorder')))
 

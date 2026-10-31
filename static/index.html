@@ -72,6 +72,11 @@ button.bad{color:var(--bad)}button.bad:hover{border-color:var(--bad);color:var(-
 button.sm,.btn.sm{padding:2px 10px;font-size:13px}
 input,select,textarea{font:inherit;color:var(--tx);background:var(--card);border:1.5px solid var(--field);border-radius:4px;padding:6px 10px;max-width:100%}
 input[type=checkbox]{accent-color:var(--ink);width:16px;height:16px;vertical-align:-3px}
+.evbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 12px;margin-bottom:8px;background:var(--row);border-left:4px solid var(--line,#999)}
+.evbar.on{border-left-color:var(--volt);background:color-mix(in srgb,var(--volt) 16%,var(--row))}
+.evf select,.evf input{min-width:0}
+tr.sel td{background:color-mix(in srgb,var(--volt) 14%,transparent)}
+.tw input[type=checkbox]{width:16px;height:16px}
 @media(prefers-color-scheme:dark){input[type=checkbox]{accent-color:var(--volt)}}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--tx);box-shadow:0 0 0 3px var(--volt)}
 table{border-collapse:collapse;width:100%}
