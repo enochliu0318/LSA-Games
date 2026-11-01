@@ -1266,7 +1266,7 @@ def events_bulk_heats():
         ev = d.execute("SELECT * FROM events WHERE id=?", (eid,)).fetchone()
         if not ev:
             continue
-        n = make_heats(d, ev, S, p.get('mode', 'random'), p.get('lanes'), p.get('gap'))
+        n = make_heats(d, ev, S, p.get('mode') if p.get('mode') in ('random', 'seed', 'bib') else 'random', p.get('lanes'), p.get('gap'))
         if n is None:
             skipped.append(evl(ev['name'], ev['grp']))
         else:
@@ -1353,6 +1353,16 @@ def entry_update(xid):
     heat, lane = p.get('heat_id', e['heat_id']), p.get('lane', e['lane'])
     heat = int(heat) if heat else None
     lane = int(lane) if lane not in (None, '') else None
+    if 'heat_id' in p and heat != e['heat_id'] and 'lane' not in p:      # 只换组:自动给一个空跑道/顺序
+        lane = None
+        if heat:
+            ev_ = d.execute("SELECT * FROM events WHERE id=?", (e['event_id'],)).fetchone()
+            used = {r[0] for r in d.execute("SELECT lane FROM entries WHERE heat_id=? AND id!=?", (heat, xid))}
+            if ev_['kind'] in FIELDISH:
+                lane = max(used or {0}) + 1
+            else:
+                L = int(ev_['lanes'] or 8)
+                lane = next((x for x in lane_priority(L) if x not in used), (max(used or {0}) + 1))
     if heat and lane:
         occ = d.execute("SELECT * FROM entries WHERE heat_id=? AND lane=? AND id!=?", (heat, lane, xid)).fetchone()
         if occ:
@@ -1389,13 +1399,14 @@ def lane_priority(L):
     return order
 
 
-def make_heats(d, ev, S, mode='random', lanes=None, gap=None):
-    """为项目重新生成分组与跑道。没有报名返回 None,否则返回组数。"""
+def make_heats(d, ev, S, mode='random', lanes=None, gap=None, count=None):
+    """为项目重新生成分组与跑道。没有报名返回 None,否则返回组数。
+    mode: random 随机抽签 / seed 按报名成绩 / bib 按号码从小到大 / manual 只建 count 个空组,由人工分配。"""
     eid = ev['id']
     L = int(lanes or ev['lanes'] or S['lanes'])
     gap = int(gap if gap not in (None, '') else S['heat_gap'])
-    ents = [dict(r) for r in d.execute("SELECT * FROM entries WHERE event_id=? AND status!='DNS'", (eid,))]
-    if not ents:
+    ents = [dict(r) for r in d.execute("SELECT e.*, a.bib AS _bib FROM entries e LEFT JOIN athletes a ON a.id=e.athlete_id WHERE e.event_id=? AND e.status!='DNS'", (eid,))]
+    if not ents and mode != 'manual':
         return None
     d.execute("UPDATE entries SET heat_id=NULL, lane=NULL WHERE event_id=?", (eid,))
     d.execute("DELETE FROM heats WHERE event_id=?", (eid,))
@@ -1404,6 +1415,11 @@ def make_heats(d, ev, S, mode='random', lanes=None, gap=None):
         # 无报名成绩者视为最差;asc(越小越好)时最差在前,field(越大越好)时最差在前
         ents.sort(key=(lambda r: -(r['seed'] if r['seed'] is not None else 1e9)) if asc
                   else (lambda r: r['seed'] if r['seed'] is not None else -1e9))
+    elif mode == 'bib':   # 按号码从小到大;无号码(如队伍)排最后
+        def bkey(r):
+            digits = ''.join(ch for ch in (r.get('_bib') or '') if ch.isdigit())
+            return (int(digits) if digits else 10 ** 9, r.get('_bib') or '', r['id'])
+        ents.sort(key=bkey)
     else:
         random.shuffle(ents)
     t0 = None
@@ -1413,6 +1429,13 @@ def make_heats(d, ev, S, mode='random', lanes=None, gap=None):
         except ValueError:
             t0 = None
     groups = []
+    if mode == 'manual':
+        k = max(1, min(60, int(count or math.ceil(max(len(ents), 1) / L))))
+        for gi in range(k):
+            st = (t0 + timedelta(minutes=gi * gap)).strftime('%Y-%m-%d %H:%M') if (t0 and ev['kind'] not in FIELDISH) else None
+            d.execute("INSERT INTO heats(event_id,name,start_time,sort) VALUES(?,?,?,?)", (eid, '第%d组' % (gi + 1), st, gi))
+        log('手动分组', '%s 建 %d 个空组' % (ev['name'], k))
+        return k
     if ev['kind'] in FIELDISH:
         groups = [ents]
     else:
@@ -1431,8 +1454,9 @@ def make_heats(d, ev, S, mode='random', lanes=None, gap=None):
         hid = d.execute("INSERT INTO heats(event_id,name,start_time,sort) VALUES(?,?,?,?)", (eid, name, st, gi)).lastrowid
         if ev['kind'] not in FIELDISH and mode == 'seed':
             g_ = list(reversed(g_))  # 组内成绩最好者排在最前,占据最佳跑道
+        lanes_ = sorted(prio[:len(g_)]) if (mode == 'bib' and ev['kind'] not in FIELDISH) else prio   # 号码模式:用到的跑道从小到大对应号码从小到大
         for k, e in enumerate(g_):
-            lane = (k + 1) if ev['kind'] in FIELDISH else prio[k]
+            lane = (k + 1) if ev['kind'] in FIELDISH else lanes_[k]
             d.execute("UPDATE entries SET heat_id=?, lane=? WHERE id=?", (hid, lane, e['id']))
     log('生成分组', '%s %d 组' % (ev['name'], len(groups)))
     return len(groups)
@@ -1444,11 +1468,33 @@ def heats_generate(eid):
     p = request.get_json() or {}
     d = db()
     ev = d.execute("SELECT * FROM events WHERE id=?", (eid,)).fetchone()
-    n = make_heats(d, ev, settings(), p.get('mode', 'random'), p.get('lanes'), p.get('gap'))
+    n = make_heats(d, ev, settings(), p.get('mode', 'random'), p.get('lanes'), p.get('gap'), p.get('count'))
     if n is None:
         return jsonify(error='该项目还没有报名'), 400
     d.commit()
     return jsonify(heats=n)
+
+
+@app.post('/api/events/<int:eid>/heats')
+@need('admin')
+def heat_add(eid):
+    d = db()
+    if not d.execute("SELECT 1 FROM events WHERE id=?", (eid,)).fetchone():
+        return jsonify(error='项目不存在'), 404
+    n = d.execute("SELECT COUNT(*), COALESCE(MAX(sort),-1) FROM heats WHERE event_id=?", (eid,)).fetchone()
+    d.execute("INSERT INTO heats(event_id,name,sort) VALUES(?,?,?)", (eid, '第%d组' % (n[0] + 1), n[1] + 1))
+    d.commit()
+    return jsonify(ok=True)
+
+
+@app.delete('/api/heats/<int:hid>')
+@need('admin')
+def heat_delete(hid):
+    d = db()
+    d.execute("UPDATE entries SET lane=NULL WHERE heat_id=?", (hid,))      # 成员回到“未分组”
+    d.execute("DELETE FROM heats WHERE id=?", (hid,))
+    d.commit()
+    return jsonify(ok=True)
 
 
 @app.put('/api/heats/<int:hid>')
