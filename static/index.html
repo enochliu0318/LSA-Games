@@ -145,6 +145,26 @@ tr.err td{background:color-mix(in srgb,var(--bad) 16%,transparent)}
 #rt tr[data-rk="2"] td{background:color-mix(in srgb,#9AA3AD 20%,transparent)}
 #rt tr[data-rk="3"] td{background:color-mix(in srgb,#C9803B 20%,transparent)}
 #rt tr.saved td{background:color-mix(in srgb,var(--volt) 55%,transparent)}
+.podium{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px}
+.pod{display:flex;gap:14px;background:var(--card);border-top:6px solid var(--bd);padding:14px 16px;align-items:flex-start}
+.pod.p1{border-top-color:var(--gold);background:color-mix(in srgb,var(--gold) 12%,var(--card))}
+.pod.p2{border-top-color:var(--silver)}.pod.p3{border-top-color:var(--bronze)}
+.pod-rk{font-size:54px;line-height:.9;font-weight:800;font-style:italic}
+.pod.p1 .pod-rk{color:var(--gold-d)}.pod.p2 .pod-rk{color:var(--silver-d)}.pod.p3 .pod-rk{color:var(--bronze-d)}
+.pod-n{font-size:19px;font-weight:700;margin-bottom:4px}.pod-v{margin-top:6px;font-size:22px}.pod-v .rv{font-family:var(--num);font-size:28px}
+.pod-p{font-family:var(--num);font-size:18px;font-weight:700;color:var(--mut)}
+.rec-banner{border-left-color:var(--gold)}
+.chip.rec{background:var(--gold);color:var(--ink)}
+.medal{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:34px;border-radius:50%;font-family:var(--num);font-size:20px;font-weight:800;background:var(--row);color:var(--tx)}
+.medal.m1{background:var(--gold);color:var(--ink)}.medal.m2{background:var(--silver);color:var(--ink)}.medal.m3{background:var(--bronze);color:var(--ink)}
+#rkt td{white-space:nowrap}#rkt td.nm{white-space:normal;font-size:17px;font-weight:600}
+#rkt .rv{font-family:var(--num);font-size:20px}
+#rkt .tot{font-size:24px;font-weight:800;text-align:right}
+#rkt td.dim{color:var(--mut)}#rkt td.hl{color:var(--gold-d);font-weight:800}
+tr.rk-row.top1 td{background:color-mix(in srgb,var(--gold) 20%,transparent)}
+tr.rk-row.top2 td{background:color-mix(in srgb,var(--silver) 20%,transparent)}
+tr.rk-row.top3 td{background:color-mix(in srgb,var(--bronze) 18%,transparent)}
+tr.rk-row.rec td:first-child{box-shadow:inset 5px 0 0 var(--gold-d)}
 .sec-t{font-family:var(--num);font-size:17px;font-weight:700;margin-right:12px;color:var(--mut)}
 #rt td:first-child{font-family:var(--num);font-size:19px;font-weight:700}
 #rt td{white-space:nowrap}
@@ -744,11 +764,23 @@ async function pageEvent(id) {
   }
 
   if (tab === 'rank') {
-    const ranked = rows.filter(r => r.rank !== null);
-    body.innerHTML = `<div class="card"><div class="tw"><table><tr><th>名次</th><th>${isRelay ? '队伍' : '姓名'}</th><th>队伍</th><th>成绩</th><th>名次分</th><th>参与分</th><th>纪录加分</th><th>合计</th></tr>
-    ${ranked.map(r => `<tr><td><b class="num m${r.rank}" style="font-size:24px">${r.rank}</b></td><td>${who(r)}${mem(r)}</td><td>${tag(r.team_name, r.team_color)}</td><td><b>${esc(r.value_text)}</b> ${r.record ? '🔥破纪录' : ''}</td><td>${num(r.points)}</td><td>${num(r.part)}</td><td>${num(r.bonus)}</td><td><b>${num(r.total)}</b></td></tr>`).join('') || '<tr><td colspan=8 class="mut">暂无有效成绩</td></tr>'}</table></div>
-    ${rows.filter(r => r.rank === null && r.status !== 'reg').length ? `<p class="mut sm">无成绩:${rows.filter(r => r.rank === null && r.status !== 'reg').map(r => who(r) + '(' + r.status + ')').join('、')}</p>` : ''}
-    <p class="mut sm">说明:名次相同的选手平分所占名次的得分;参与分、破纪录加分见「设置」。</p></div>`;
+    const ranked = rows.filter(r => r.rank !== null).sort((x, y) => x.rank - y.rank || y.total - x.total || (x.lane || 99) - (y.lane || 99));
+    const unranked = rows.filter(r => r.rank === null && r.status !== 'reg');
+    const tied = {}; ranked.forEach(r => tied[r.rank] = (tied[r.rank] || 0) + 1);
+    const records = ranked.filter(r => r.record), top = ranked.filter(r => r.rank <= 3);
+    const tp = {}; ranked.forEach(r => { const k = r.team_name || '未分队'; (tp[k] ||= { name: k, color: r.team_color, v: 0 }).v += r.total; });
+    const teamPts = Object.values(tp).sort((x, y) => y.v - x.v);
+    const val = r => `<b class="rv">${esc(r.value_text)}</b> <span class="mut sm">${esc(unit)}</span>`;
+    body.innerHTML = !ranked.length ? '<div class="card mut">还没有有效成绩。录入成绩后,这里会按名次自动排序并高亮前三名与破纪录者。</div>' :
+      (records.length ? `<div class="hint rec-banner">🔥 <b>破纪录</b>:${records.map(r => `${who(r)}(${esc(r.value_text)}${esc(unit)})`).join('、')}${ev.record_text ? ` · 原纪录 ${esc(ev.record_text)}${esc(unit)}${ev.record_holder ? ' ' + esc(ev.record_holder) : ''}` : ''}${ev.scored ? ' · 加破纪录分' : ''}</div>` : '') +
+      `<div class="podium">${top.map(r => `<div class="pod p${r.rank}"><div class="pod-rk num">${r.rank}</div><div class="pod-b"><div class="pod-n">${isRelay ? '' : bibTag(r.bib) + ' '}${who(r)}${tied[r.rank] > 1 ? ' <span class="chip">并列</span>' : ''}</div>${mem(r)}<div>${tag(r.team_name, r.team_color)}</div>
+        <div class="pod-v">${val(r)}${r.record ? ' <span class="chip rec">破纪录</span>' : ''}</div><div class="pod-p">${ev.scored ? '+' + num(r.total) + ' 分' : ''}</div></div></div>`).join('')}</div>` +
+      `<div class="card"><div class="row" style="margin-bottom:8px"><b class="grow">完整排名(${ranked.length} ${isRelay ? '队' : '人'})</b>${ev.scored && teamPts.length ? `<span class="mut sm">本项目各队得分:</span>${teamPts.map(t => `${tag(t.name, t.color)}<b class="num">${num(t.v)}</b>`).join(' ')}` : ''}</div>
+      <div class="tw"><table id="rkt"><tr><th>名次</th>${isRelay ? '' : '<th>号码</th>'}<th>${isRelay ? '队伍' : '姓名'}</th><th class="c-team">队伍</th><th>成绩</th>${ev.scored ? '<th class="c-team">名次分</th><th class="c-team">参与分</th><th class="c-team">纪录加分</th><th>合计</th>' : ''}</tr>
+      ${ranked.map(r => `<tr class="rk-row ${r.rank <= 3 ? 'top' + r.rank : ''} ${r.record ? 'rec' : ''}"><td><span class="medal m${r.rank <= 3 ? r.rank : 'x'}">${r.rank}</span>${tied[r.rank] > 1 ? '<span class="mut sm"> 并列</span>' : ''}</td>${isRelay ? '' : `<td>${bibTag(r.bib)}</td>`}<td class="nm">${who(r)}${mem(r)}</td><td class="c-team">${tag(r.team_name, r.team_color)}</td>
+        <td>${val(r)}${r.record ? ' <span class="chip rec">🔥破纪录</span>' : ''}</td>${ev.scored ? `<td class="c-team dim">${num(r.points)}</td><td class="c-team dim">${num(r.part)}</td><td class="c-team ${r.bonus ? 'hl' : 'dim'}">${num(r.bonus)}</td><td class="tot num">${num(r.total)}</td>` : ''}</tr>`).join('')}</table></div>
+      ${unranked.length ? `<p class="mut sm">无成绩:${unranked.map(r => who(r) + '(' + (RES_ST[r.status] || r.status) + ')').join('、')}</p>` : ''}
+      <p class="mut sm">说明:名次相同者平分所占名次的得分;参与分、破纪录加分见「设置」。</p></div>`;
   }
 }
 ACT.etab = d => { sessionStorage['etab' + d.id] = d.tab; render(); };
