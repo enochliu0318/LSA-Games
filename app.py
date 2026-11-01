@@ -102,6 +102,9 @@ def init_db():
         c.execute('ALTER TABLE events ADD COLUMN unit TEXT')
     if 'in_limit' not in ecols:
         c.execute('ALTER TABLE events ADD COLUMN in_limit INTEGER DEFAULT 1')
+    c.row_factory = sqlite3.Row
+    for r in c.execute("SELECT DISTINCT v.id FROM events v JOIN entries e ON e.event_id=v.id WHERE v.kind='game' AND e.athlete_id IS NOT NULL").fetchall():
+        to_team_event(c, r['id'])           # 旧版把游戏当个人项目导入的,自动并为队伍报名
     c.commit()
     c.close()
 
@@ -258,6 +261,7 @@ def parse_value(txt):
 
 FIELDISH = ('field', 'game')                 # 数值越大越好、不设跑道的项目类型
 KINDS = ('track', 'field', 'game', 'relay')
+TEAMK = ('relay', 'game')                   # 按队伍参赛的项目类型(接力、游戏)
 COUNT_UNITS = ('次', '分', '个', '级', '趟', '环')   # 整数计量单位:成绩为整数时不显示小数
 UNIT_DEFAULT = {'track': '秒', 'relay': '秒', 'field': '米', 'game': '分'}
 
@@ -306,7 +310,7 @@ def compute(d, ev, S, rows=None):
     kind = ev['kind']
     asc = kind not in FIELDISH
     table = json.loads(ev['points_json']) if ev['points_json'] else (
-        S['points_relay'] if kind == 'relay' else S['points_individual'])
+        S['points_relay'] if kind in TEAMK else S['points_individual'])
     key = lambda r: round(r['value'], 2)
     valid = sorted([r for r in rows if r['status'] == 'ok' and r['value'] is not None],
                    key=(lambda r: key(r)) if asc else (lambda r: -key(r)))
@@ -534,7 +538,7 @@ def norm_gender(g_):
 
 def limit_count(d, aid):
     """该选手已报的、计入报名上限的项目数。"""
-    return d.execute("SELECT COUNT(*) FROM entries e JOIN events v ON v.id=e.event_id WHERE e.athlete_id=? AND v.in_limit=1 AND v.kind!='relay'", (aid,)).fetchone()[0]
+    return d.execute("SELECT COUNT(*) FROM entries e JOIN events v ON v.id=e.event_id WHERE e.athlete_id=? AND v.in_limit=1 AND v.kind NOT IN ('relay','game')", (aid,)).fetchone()[0]
 
 
 def import_gender(g_):
@@ -576,7 +580,10 @@ def athletes_list():
         SELECT a.*, t.name AS team_name, t.color AS team_color,
           (SELECT COUNT(*) FROM entries e WHERE e.athlete_id=a.id) AS n_events,
           (SELECT GROUP_CONCAT(e.event_id) FROM entries e WHERE e.athlete_id=a.id) AS event_ids,
-          (SELECT GROUP_CONCAT(ev.name || COALESCE(ev.grp,''), '、') FROM entries e JOIN events ev ON ev.id=e.event_id WHERE e.athlete_id=a.id) AS event_names
+          (SELECT GROUP_CONCAT(nm, '、') FROM (
+            SELECT ev.name || CASE WHEN COALESCE(ev.grp,'')='' THEN '' ELSE '(' || ev.grp || ')' END AS nm FROM entries e JOIN events ev ON ev.id=e.event_id WHERE e.athlete_id=a.id
+            UNION ALL
+            SELECT ev.name || CASE WHEN COALESCE(ev.grp,'')='' THEN '' ELSE '(' || ev.grp || ')' END FROM relay_members m JOIN entries e ON e.id=m.entry_id JOIN events ev ON ev.id=e.event_id WHERE m.athlete_id=a.id)) AS event_names
         FROM athletes a LEFT JOIN teams t ON t.id=a.team_id
         WHERE %s ORDER BY (a.bib IS NULL), CAST(a.bib AS INTEGER), a.bib, a.id""" % ' AND '.join(q), args)]
     for r in rows:
@@ -648,7 +655,7 @@ def athlete_set_events(aid):
     warnings, added = [], 0
     for eid in want - set(cur):
         ev = d.execute("SELECT * FROM events WHERE id=?", (eid,)).fetchone()
-        if not ev or ev['kind'] == 'relay':
+        if not ev or ev['kind'] in TEAMK:
             continue
         d.execute("INSERT INTO entries(event_id,athlete_id) VALUES(?,?)", (eid, aid))
         added += 1
@@ -656,7 +663,7 @@ def athlete_set_events(aid):
         ev = d.execute("SELECT name,grp,gender FROM events WHERE id=?", (eid,)).fetchone()
         if ev and ev['gender'] in ('M', 'F') and ev['gender'] != a['gender']:
             warnings.append('“%s”与选手性别不符' % evl(ev['name'], ev['grp']))
-    n_lim = d.execute("SELECT COUNT(*) FROM events WHERE in_limit=1 AND kind!='relay' AND id IN (%s)" % (','.join(str(int(i)) for i in want) or '0')).fetchone()[0]
+    n_lim = d.execute("SELECT COUNT(*) FROM events WHERE in_limit=1 AND kind NOT IN ('relay','game') AND id IN (%s)" % (','.join(str(int(i)) for i in want) or '0')).fetchone()[0]
     if n_lim > S['max_events']:
         warnings.append('已报 %d 项(计入上限的),超过上限 %d 项' % (n_lim, int(S['max_events'])))
     for c in find_conflicts(d):
@@ -690,6 +697,8 @@ def athlete_bulk_update():
         d.executemany("UPDATE athletes SET grade=? WHERE id=?", [(_clean(p['grade']), i) for i in ids])
     if 'team_id' in p:
         d.executemany("UPDATE athletes SET team_id=? WHERE id=?", [(p['team_id'] or None, i) for i in ids])
+    if p.get('gender') in ('M', 'F', 'X'):
+        d.executemany("UPDATE athletes SET gender=? WHERE id=?", [(p['gender'], i) for i in ids])
     log('批量修改', '%d 人' % len(ids))
     d.commit()
     return jsonify(updated=len(ids))
@@ -759,7 +768,7 @@ def athlete_import():
     skipped, warnings = [], []
     cols, first = list(DEFAULT_COLS), True
 
-    created, relay_noted = [], set()
+    created, relay_noted, game_noted, touched = [], set(), set(), set()
 
     def canon(tok, gender):
         """把“100米/男100米/男子100米/混合4×100米接力”规范成 (项目全名, 性别, 去掉性别的基础名)。"""
@@ -855,13 +864,22 @@ def athlete_import():
                 warnings.append('第%d行 %s:找不到项目“%s”(或与性别不符)' % (ln, row['name'], tok))
             elif ev['gender'] in ('M', 'F') and ev['gender'] != gender:
                 warnings.append('第%d行 %s:性别与项目“%s”不符,未报名' % (ln, row['name'], tok))
-            elif ev['kind'] == 'relay':        # 接力:记下候选队员,并给其所在队伍建一支接力队
-                relay_noted.add(ev['id'])
+            elif ev['kind'] in TEAMK:        # 接力/游戏:按队伍参赛。记下候选/参赛队员,并给其所在队伍建一条队伍报名
+                (relay_noted if ev['kind'] == 'relay' else game_noted).add(ev['id'])
                 d.execute("INSERT OR IGNORE INTO relay_cand(event_id,athlete_id) VALUES(?,?)", (ev['id'], aid))
                 tid_ = d.execute("SELECT team_id FROM athletes WHERE id=?", (aid,)).fetchone()[0]
-                if tid_ and not d.execute("SELECT 1 FROM entries WHERE event_id=? AND team_id=?", (ev['id'], tid_)).fetchone():
-                    d.execute("INSERT INTO entries(event_id,team_id) VALUES(?,?)", (ev['id'], tid_))
-                    stat['relay_teams'] += 1
+                if tid_:
+                    x_ = d.execute("SELECT id FROM entries WHERE event_id=? AND team_id=?", (ev['id'], tid_)).fetchone()
+                    if x_:
+                        xid_ = x_['id']
+                    else:
+                        xid_ = d.execute("INSERT INTO entries(event_id,team_id) VALUES(?,?)", (ev['id'], tid_)).lastrowid
+                        if ev['kind'] == 'relay':
+                            stat['relay_teams'] += 1
+                    if ev['kind'] == 'game':        # 游戏:报名者即参赛队员
+                        n_ = d.execute("SELECT COUNT(*) FROM relay_members WHERE entry_id=?", (xid_,)).fetchone()[0]
+                        d.execute("INSERT OR IGNORE INTO relay_members(entry_id,athlete_id,leg) VALUES(?,?,?)", (xid_, aid, n_ + 1))
+                        touched.add(xid_)
             else:
                 c = d.execute("INSERT OR IGNORE INTO entries(event_id,athlete_id) VALUES(?,?)", (ev['id'], aid))
                 if c.rowcount:
@@ -870,6 +888,10 @@ def athlete_import():
         n_reg = limit_count(d, aid)
         if n_reg > S['max_events']:
             warnings.append('第%d行 %s:共报 %d 项,超过上限 %d(已导入,请留意)' % (ln, row['name'], n_reg, int(S['max_events'])))
+    for x_ in touched:
+        sync_members_text(d, x_)
+    if game_noted:
+        warnings.append('共 %d 个游戏项目(按队伍参赛),已为各队建立参赛记录并记下参赛队员,可在项目页「编辑队员」调整。' % len(game_noted))
     if relay_noted:
         warnings.append('共 %d 个接力项目,已为各队建立接力队 %d 支(报名该接力的人记为候选)。请到接力项目页点「编辑队员」选出上场的 %d 人。' % (len(relay_noted), stat['relay_teams'], int(S['relay_size'])))
     log('导入人员', '新增%d 更新%d 报名%d' % (stat['imported'], stat['updated'], stat['registered']))
@@ -989,14 +1011,14 @@ def event_get(eid):
     rows_sorted = sorted(rows, key=lambda r: (r['heat_sort'] if r['heat_sort'] is not None else 999,
                                              r['lane'] or 999, r['bib'] or '', r['id']))
     heats = [dict(h) for h in d.execute("SELECT * FROM heats WHERE event_id=? ORDER BY sort,id", (eid,))]
-    if ev['kind'] == 'relay':
+    if ev['kind'] in TEAMK:
         mm = {}
         for r in d.execute("SELECT m.entry_id,a.id,a.name FROM relay_members m JOIN athletes a ON a.id=m.athlete_id JOIN entries x ON x.id=m.entry_id WHERE x.event_id=? ORDER BY m.leg", (eid,)):
             mm.setdefault(r['entry_id'], []).append(dict(id=r['id'], name=r['name']))
         for r in rows_sorted:
             r['member_list'] = mm.get(r['id'], [])
     return jsonify(event=ev_dict(ev), entries=rows_sorted, heats=heats,
-                   points_table=ev_dict(ev)['points_list'] or (S['points_relay'] if ev['kind'] == 'relay' else S['points_individual']))
+                   points_table=ev_dict(ev)['points_list'] or (S['points_relay'] if ev['kind'] in TEAMK else S['points_individual']))
 
 
 @app.put('/api/events/<int:eid>')
@@ -1009,6 +1031,8 @@ def event_update(eid):
     if old and old['start_time'] != b[4]:
         set_event_start(d, old, b[4])
     ev_extras(d, eid, request.get_json() or {})
+    if b[1] in TEAMK and old and old['kind'] not in TEAMK:
+        to_team_event(d, eid)
     log('改项目', b[0])
     d.commit()
     return jsonify(ok=True)
@@ -1039,6 +1063,32 @@ def event_delete(eid):
 
 
 # ----------------------------------------------------------------- 接力队员
+def sync_members_text(d, xid):
+    names = [r['name'] for r in d.execute("SELECT a.name FROM relay_members m JOIN athletes a ON a.id=m.athlete_id WHERE m.entry_id=? ORDER BY m.leg", (xid,))]
+    d.execute("UPDATE entries SET members=? WHERE id=?", ('、'.join(names) or None, xid))
+
+
+def to_team_event(d, eid):
+    """项目改为接力/游戏时,把原有的个人报名并入队伍报名:每队一条;游戏记为参赛队员,接力记为候选。返回处理的个人报名数。"""
+    ev = d.execute("SELECT kind FROM events WHERE id=?", (eid,)).fetchone()
+    rows = d.execute("SELECT id,athlete_id FROM entries WHERE event_id=? AND athlete_id IS NOT NULL", (eid,)).fetchall()
+    for r in rows:
+        a = d.execute("SELECT team_id FROM athletes WHERE id=?", (r['athlete_id'],)).fetchone()
+        d.execute("INSERT OR IGNORE INTO relay_cand(event_id,athlete_id) VALUES(?,?)", (eid, r['athlete_id']))
+        if a and a['team_id']:
+            x = d.execute("SELECT id FROM entries WHERE event_id=? AND team_id=?", (eid, a['team_id'])).fetchone()
+            xid = x['id'] if x else d.execute("INSERT INTO entries(event_id,team_id) VALUES(?,?)", (eid, a['team_id'])).lastrowid
+            if ev['kind'] == 'game':
+                n = d.execute("SELECT COUNT(*) FROM relay_members WHERE entry_id=?", (xid,)).fetchone()[0]
+                d.execute("INSERT OR IGNORE INTO relay_members(entry_id,athlete_id,leg) VALUES(?,?,?)", (xid, r['athlete_id'], n + 1))
+        d.execute("DELETE FROM entries WHERE id=?", (r['id'],))
+    if rows:
+        d.execute("DELETE FROM heats WHERE event_id=?", (eid,))
+        for x in d.execute("SELECT id FROM entries WHERE event_id=? AND team_id IS NOT NULL", (eid,)).fetchall():
+            sync_members_text(d, x['id'])
+    return len(rows)
+
+
 def _relay_entry(d, xid):
     e = d.execute("SELECT * FROM entries WHERE id=?", (xid,)).fetchone()
     if not e or not e['team_id']:
@@ -1066,7 +1116,7 @@ def relay_get(xid):
                  same_grade=bool(ev['grp']) and a['grade'] == ev['grp'])
         ath.append(a)
     team = d.execute("SELECT name FROM teams WHERE id=?", (e['team_id'],)).fetchone()
-    return jsonify(event=evl(ev['name'], ev['grp']), team=team['name'] if team else '', size=int(S['relay_size']), current=cur, athletes=ath)
+    return jsonify(event=evl(ev['name'], ev['grp']), team=team['name'] if team else '', size=int(S['relay_size']) if ev['kind'] == 'relay' else 99, kind=ev['kind'], current=cur, athletes=ath)
 
 
 @app.put('/api/entries/<int:xid>/relay')
@@ -1078,7 +1128,7 @@ def relay_set(xid):
     if not e:
         return jsonify(error='不是接力队'), 404
     ids = [int(i) for i in p.get('athlete_ids', [])]
-    size = int(settings()['relay_size'])
+    size = int(settings()['relay_size']) if ev['kind'] == 'relay' else 99
     if len(set(ids)) != len(ids):
         raise ValueError('队员有重复')
     if len(ids) > size and not p.get('force'):
@@ -1143,7 +1193,7 @@ def events_bulk_update():
     if 'start_time' in f and f['start_time'] and not _dt(f['start_time']):
         raise ValueError('开始时间格式不对')
     d = db()
-    n = 0
+    n, conv = 0, []
     for eid in ids:
         ev = d.execute("SELECT * FROM events WHERE id=?", (eid,)).fetchone()
         if not ev:
@@ -1165,6 +1215,8 @@ def events_bulk_update():
         if f.get('kind') in KINDS:
             sets.append('kind=?')
             args.append(f['kind'])
+            if f['kind'] in TEAMK and ev['kind'] not in TEAMK:
+                conv.append(eid)
         if 'unit' in f:
             sets.append('unit=?')
             args.append((f['unit'] or '').strip() or None)
@@ -1184,6 +1236,9 @@ def events_bulk_update():
         elif shift and _dt(ev['start_time']):
             set_event_start(d, ev, (_dt(ev['start_time']) + timedelta(minutes=shift)).strftime(TFMT))
         n += 1
+    for eid in conv:
+        d.execute("UPDATE events SET kind=kind WHERE id=?", (eid,))
+        to_team_event(d, eid)
     log('批量修改项目', '%d 个' % n)
     d.commit()
     return jsonify(updated=n)
@@ -1256,9 +1311,9 @@ def entries_add(eid):
     if not ev:
         return jsonify(error='项目不存在'), 404
     S = settings()
-    if ev['kind'] == 'relay':
+    if ev['kind'] in TEAMK:
         if not p.get('team_id'):
-            return jsonify(error='接力项目请选择队伍'), 400
+            return jsonify(error='接力/游戏项目请选择队伍'), 400
         d.execute("INSERT INTO entries(event_id,team_id,label,members) VALUES(?,?,?,?)",
                   (eid, int(p['team_id']), p.get('label') or None, p.get('members') or None))
         d.commit()

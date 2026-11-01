@@ -71,7 +71,28 @@ button.pri:hover{background:var(--volt);border-color:var(--ink);color:var(--ink)
 button.bad{color:var(--bad)}button.bad:hover{border-color:var(--bad);color:var(--bad)}
 .evbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 12px;margin-bottom:8px;background:var(--row);border-left:4px solid var(--line,#999)}
 .evbar.on{border-left-color:var(--volt);background:color-mix(in srgb,var(--volt) 16%,var(--row))}
-.evf select,.evf input{min-width:0}
+#dock{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:40;max-width:calc(100vw - 20px);display:none}
+#dock.on{display:block}
+.dock{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--ink);color:#fff;padding:10px 16px 10px 20px;border-left:6px solid var(--volt);box-shadow:0 10px 30px rgba(0,0,0,.35);clip-path:polygon(0 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%)}
+.dock-n b{color:var(--volt);font-size:18px;margin:0 2px}
+.dock a{color:#B9BEC6;font-size:13px;text-decoration:underline;text-underline-offset:3px}
+.dock a:hover{color:var(--volt)}
+.dock-sp{flex:1;min-width:6px}
+.dock button{background:transparent;color:#fff;border:1px solid #5B616B;padding:5px 12px;font-size:14px}
+.dock button:hover{background:#fff;color:var(--ink);border-color:#fff}
+.dock button.bad{color:#FF8A8A;border-color:#8a4a4a}
+.dock button.bad:hover{background:#FF8A8A;color:var(--ink)}
+.fbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.fbar input,.fbar select{min-width:0;width:auto}
+.bm-row{display:grid;grid-template-columns:132px 1fr;gap:10px;align-items:center;padding:7px 8px;border-bottom:1px solid var(--bd)}
+.bm-row.on{background:color-mix(in srgb,var(--volt) 14%,transparent)}
+.bm-on{display:flex;gap:8px;align-items:center;font-weight:600}
+.bm-row input:not([type=checkbox]),.bm-row select{width:100%}
+.nw{white-space:nowrap}
+.c-ev{min-width:260px}
+.f input[type=number]{max-width:200px}
+@media(max-width:860px){#dock{bottom:74px}}
+@media(max-width:560px){.bm-row{grid-template-columns:1fr}}
 .limit-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:4px 14px;max-height:50vh;overflow:auto}
 .limit-item{display:flex;align-items:center;gap:6px;padding:5px 2px;border-bottom:1px solid var(--bd,#ddd)}
 .limit-item input{width:16px;height:16px;flex:none}
@@ -124,7 +145,7 @@ select.lane{width:68px;font:700 19px var(--num);padding:2px 6px}
 @keyframes pop{from{opacity:0;transform:translate(-6px,-6px)}}
 .f{display:grid;grid-template-columns:104px 1fr;gap:10px 12px;align-items:center;margin-bottom:14px}
 .f label{color:var(--mut);font-size:14px}.f .full{grid-column:1/-1}
-#toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 20px 10px 16px;border-left:6px solid var(--volt);z-index:99;display:none;max-width:90vw;box-shadow:6px 6px 0 rgba(0,0,0,.25)}
+#toast{position:fixed;left:50%;top:78px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 20px 10px 16px;border-left:6px solid var(--volt);z-index:99;display:none;max-width:90vw;box-shadow:6px 6px 0 rgba(0,0,0,.25)}
 #toast.bad{border-left-color:var(--bad)}
 #upd{position:fixed;right:20px;bottom:20px;z-index:40;display:none;background:var(--volt);border-color:var(--ink);color:var(--ink);box-shadow:5px 5px 0 var(--ink)}
 #upd:hover{background:var(--volt);color:var(--ink)}
@@ -231,7 +252,7 @@ body.tv .tvx:hover{opacity:1;background:var(--volt);color:var(--ink)}
   .tl-row{grid-template-columns:62px 14px minmax(0,1fr);gap:0 8px}.tl-time{font-size:20px}
   .tl-rail::before{left:6px}.tl-rail i{left:1px}.tl-row.now .tl-rail i{left:0}
   .card.hero{padding:20px 18px 24px}.hero-name{font-size:28px!important}.facts{gap:14px 26px}.facts b.num{font-size:26px}
-  #toast{bottom:84px}#upd{bottom:76px;right:12px}
+  #toast{top:64px}#upd{bottom:76px;right:12px}
   .modal-bg{padding:3vh 8px}.modal{padding:18px;box-shadow:6px 6px 0 rgba(21,23,26,.9)}
 }
 @media(max-width:560px){
@@ -254,6 +275,7 @@ button.pri .chip.running{background:var(--volt);color:var(--ink)}
 <div class="top"><h1 id="ptitle"></h1><div id="psub" class="date"></div></div>
 <main id="app">加载中…</main>
 <nav id="tabbar"></nav>
+<div id="dock"></div>
 <button class="tvx sm" id="tvx">退出大屏</button>
 <div id="toast"></div>
 <button id="upd" class="pri">数据已更新,点击刷新</button>
@@ -299,6 +321,44 @@ function modal(title, html, wide) {
 function closeModal() { $('#modal')?.remove(); }
 const isAdmin = () => ME === 'admin', canRec = () => !!ME;
 const mayRec = id => ME === 'admin' || (ME === 'recorder' && (INFO.my_events || []).includes(+id));
+const TEAMK = k => k === 'relay' || k === 'game';            // 按队伍参赛的类型
+/* 统一的多选与批量操作:底部操作条 + 勾选绑定 + 批量修改窗口(项目页、人员页共用) */
+let DOCK = null;
+function setDock(o) {
+  DOCK = o; const d = $('#dock'); if (!d) return;
+  if (!o || !o.n) { d.className = ''; d.innerHTML = ''; return; }
+  d.className = 'on';
+  d.innerHTML = `<div class="dock"><span class="dock-n">已选<b>${o.n}</b>${o.noun}</span><a href="#" data-act="dkAll">全选当前 ${o.total}</a><a href="#" data-act="dkInv">反选</a><a href="#" data-act="dkNone">取消选择</a><span class="dock-sp"></span>${o.actions.map(a => `<button class="${a.cls || ''}" data-act="${a.act}">${a.label}</button>`).join('')}</div>`;
+}
+function bindChecks(root, sel, visible, redraw) {
+  const all = root.querySelector('.ck-all');
+  if (all) all.onchange = () => { visible.forEach(i => all.checked ? sel.add(i) : sel.delete(i)); redraw(); };
+  root.querySelectorAll('.ck').forEach(c => c.onclick = ev => { const id = +c.value, last = sel._last;
+    if (ev.shiftKey && last != null && visible.includes(last)) { const a = visible.indexOf(last), b = visible.indexOf(id); visible.slice(Math.min(a, b), Math.max(a, b) + 1).forEach(i => c.checked ? sel.add(i) : sel.delete(i)); }
+    else c.checked ? sel.add(id) : sel.delete(id);
+    sel._last = id; redraw(); });
+}
+function bulkModal({ title, n, noun, summary, fields, apply }) {
+  const inp = (f, i) => f.type === 'select' ? `<select data-v><option value="__" hidden selected>(不修改)</option>${f.options.map(o => `<option value="${esc(o.v)}">${esc(o.t)}</option>`).join('')}</select>`
+    : `<input data-v type="${f.type === 'number' ? 'number' : f.type === 'datetime' ? 'datetime-local' : 'text'}" ${f.list ? `list="bml${i}"` : ''} placeholder="${esc(f.ph || '')}" ${f.type === 'number' ? 'min="1"' : ''}>${f.list ? `<datalist id="bml${i}">${f.list.map(v => `<option value="${esc(v)}">`).join('')}</datalist>` : ''}`;
+  modal(title, `<p class="sm mut" style="margin-top:0">${summary}</p>
+  <p class="sm">只有<b>勾选</b>的项目才会被修改;在右侧填写或选择会自动勾选;勾选后留空表示<b>清空</b>该项。</p>
+  <div id="bm">${fields.map((f, i) => `<div class="bm-row" data-i="${i}"><label class="bm-on"><input type="checkbox" class="bm-c"><span>${esc(f.label)}</span></label><div>${inp(f, i)}</div></div>`).join('')}</div>
+  <div class="row" style="margin-top:12px"><button class="pri" id="ok">应用到 ${n} ${noun}</button><button onclick="closeModal()">取消</button></div>`, true);
+  const rows = [...document.querySelectorAll('#bm .bm-row')];
+  rows.forEach(r => { const c = r.querySelector('.bm-c'), v = r.querySelector('[data-v]'); const sync = () => r.classList.toggle('on', c.checked);
+    c.onchange = sync; v.oninput = v.onchange = () => { c.checked = true; sync(); }; });
+  $('#ok').onclick = () => run(async () => {
+    const vals = {}; let any = false;
+    rows.forEach(r => { const f = fields[+r.dataset.i]; if (!r.querySelector('.bm-c').checked) return; any = true;
+      let v = r.querySelector('[data-v]').value.trim();
+      if (f.type === 'select' && v === '__') throw new Error(`请选择「${f.label}」要改成什么`);
+      if (f.type === 'datetime') v = v ? fromLocal(v) : '';
+      if (f.type === 'number') { if (v === '') throw new Error(`请填写「${f.label}」`); v = +v; }
+      vals[f.key] = v; });
+    if (!any) throw new Error('请先勾选要修改的项目');
+    const msg = await apply(vals); closeModal(); toast(msg || '已修改'); render(); });
+}
 const evLabel = e => e.name + (e.grp ? '(' + e.grp + ')' : '');
 const FIELDISH = k => k === 'field' || k === 'game';          // 数值越大越好、不设跑道
 const UNIT_D = { track: '秒', relay: '秒', field: '米', game: '分' };
@@ -339,7 +399,7 @@ async function render() {
   $('#nav').innerHTML = navHTML; $('#tabbar').innerHTML = navHTML;
   $('#ptitle').textContent = key === 'event' ? '项目详情' : NAV.find(n => n[0] === key)[1];
   const nd = new Date(); $('#psub').innerHTML = `<b>${nd.getMonth() + 1}.${String(nd.getDate()).padStart(2, '0')}</b><span>周${'日一二三四五六'[nd.getDay()]}</span>`;
-  CUR = location.hash; $('#upd').style.display = 'none';
+  CUR = location.hash; $('#upd').style.display = 'none'; setDock(null);
   try { await PAGES[key](arg); } catch (e) { $('#app').innerHTML = `<div class="card">加载失败:${esc(e.message)}</div>`; }
 }
 window.addEventListener('hashchange', () => { closeModal(); render(); });
@@ -406,7 +466,7 @@ ACT.teamDetail = d => {
 async function pageSchedule() {
   const s = await api('/api/schedule'), wk = '日一二三四五六';
   const groups = {}; s.events.forEach(e => (groups[e.start_time ? e.start_time.slice(0, 10) : '未安排时间'] ||= []).push(e));
-  const unit = e => e.kind === 'relay' ? '队' : '人';
+  const unit = e => TEAMK(e.kind) ? '队' : '人';
   $('#app').innerHTML = (s.conflicts.length ? `<div class="hint warn"><b>时间冲突 ${s.conflicts.length} 处</b>:同一运动员的项目时间重叠。<br>${s.conflicts.slice(0, 6).map(c => `${esc(c.name)}(${esc(c.team || '')})  ${esc(c.a)} ${c.at} 与 ${esc(c.b)} ${c.bt}`).join('<br>')}${s.conflicts.length > 6 ? '<br>…完整列表见「设置」页' : ''}</div>` : '') +
     `<div class="card"><div class="row"><h2 class="grow" style="margin:0">全部赛程</h2><a class="btn sm" href="/api/export/schedule.csv">导出</a>${isAdmin() ? '<a class="btn sm" href="#/events">编辑项目</a>' : ''}</div>` +
     (Object.keys(groups).map(day => `
@@ -442,7 +502,7 @@ async function pageEvents() {
   $('#app').innerHTML = needAdminHint() + (ME === 'recorder' ? `<div class="card"><h2>我负责的项目(${mine.length})</h2>${mine.length ? `<div class="row">${mine.map(e => `<button class="pri" data-act="goEvent" data-id="${e.id}">${esc(evLabel(e))}<span class="chip ${e.status}">${STAT[e.status]}</span></button>`).join('')}</div>` : '<p class="mut" style="margin:0">管理员还没有给你分配项目,请联系管理员。</p>'}</div>` : '') +
   `<div class="card"><div class="row" style="margin-bottom:10px"><h2 class="grow" style="margin:0">项目管理(<span id="evcnt"></span>)</h2>
   ${isAdmin() ? `<button data-act="presets">+ 常用项目</button><button class="pri" data-act="evForm">+ 新建项目</button>` : ''}</div>
-  <div class="row evf" style="margin-bottom:10px">
+  <div class="fbar">
     <input id="evq" placeholder="搜索 项目 / 组别 / 场地" value="${esc(EVF.q)}" style="min-width:160px">
     <select id="evk"><option value="">全部类型</option>${Object.entries(KIND).map(([k, v]) => `<option value="${k}" ${EVF.kind === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
     <select id="evg"><option value="">全部性别</option>${['M', 'F', 'X'].map(k => `<option value="${k}" ${EVF.gender === k ? 'selected' : ''}>${GEN[k]}</option>`).join('')}</select>
@@ -451,54 +511,46 @@ async function pageEvents() {
     <select id="evp">${opt(grps, EVF.grp, '全部组别')}</select>
     <select id="evo"><option value="">默认顺序</option><option value="time" ${EVF.sort === 'time' ? 'selected' : ''}>按开始时间</option><option value="name" ${EVF.sort === 'name' ? 'selected' : ''}>按名称</option></select>
     <a href="#" data-act="evClearF" class="sm">清除筛选</a></div>
-  <div id="evbar"></div><div class="tw" id="evtbl"></div></div>`;
+  <div class="tw" id="evtbl"></div></div>`;
   const bind = (id, k, ev) => { $(id)[ev || 'onchange'] = e => { EVF[k] = e.target.value; drawEv(); }; };
   bind('#evq', 'q', 'oninput'); bind('#evk', 'kind'); bind('#evg', 'gender'); bind('#evs', 'status'); bind('#evv', 'venue'); bind('#evp', 'grp'); bind('#evo', 'sort');
   drawEv();
 }
 function drawEv() {
-  const list = evFiltered(), adm = isAdmin(), mineIds = EVMINE;
+  const list = evFiltered(), adm = isAdmin(), mineIds = EVMINE, ids = list.map(e => e.id);
   $('#evcnt').textContent = list.length === EVS.length ? EVS.length : list.length + ' / ' + EVS.length;
-  const nSel = EVSEL.size, allOn = list.length && list.every(e => EVSEL.has(e.id));
-  $('#evbar').innerHTML = adm ? `<div class="evbar ${nSel ? 'on' : ''}"><span class="grow"><b>${nSel ? '已选 ' + nSel + ' 项' : '勾选项目后可批量操作'}</b>
-    <a href="#" data-act="evSelAll" class="sm" style="margin-left:10px">全选当前${list.length}项</a><a href="#" data-act="evSelInv" class="sm" style="margin-left:10px">反选</a>${nSel ? '<a href="#" data-act="evSelNone" class="sm" style="margin-left:10px">取消选择</a>' : ''}</span>
-    ${nSel ? `<button data-act="evBulkEdit">批量修改</button><button data-act="evSched">排时间</button><button data-act="evShift">整体平移</button><button data-act="evHeats">生成分组</button><button class="bad" data-act="evBulkDel">删除</button>` : ''}</div>` : '';
-  $('#evtbl').innerHTML = `<table><tr>${adm ? `<th style="width:34px"><input type="checkbox" id="evall" ${allOn ? 'checked' : ''}></th>` : ''}<th>项目</th><th>类型</th><th>性别</th><th>开始</th><th>场地</th><th>道数</th><th>报名</th><th>状态</th><th></th></tr>
-  ${list.map(e => `<tr class="${EVSEL.has(e.id) ? 'sel' : ''}">${adm ? `<td><input type="checkbox" class="evc" value="${e.id}" ${EVSEL.has(e.id) ? 'checked' : ''}></td>` : ''}<td><a href="#/event/${e.id}"><b>${esc(evLabel(e))}</b></a>${e.scored ? '' : ' <span class="chip">不计分</span>'}${mineIds.includes(e.id) ? ' <span class="chip" style="background:var(--volt);color:var(--ink)">我负责</span>' : ''}</td><td>${KIND[e.kind]}</td><td>${GEN[e.gender]}</td>
-  <td>${dt(e.start_time) || '—'}</td><td>${esc(e.venue || '')}</td><td>${FIELDISH(e.kind) ? '—' : e.lanes}</td><td>${e.n_entries}</td><td><span class="chip ${e.status}">${STAT[e.status]}</span></td>
-  <td>${adm ? `<button class="sm" data-act="evForm" data-id="${e.id}">编辑</button>` : ''}</td></tr>`).join('') || `<tr><td colspan=10 class="mut">${EVS.length ? '没有符合条件的项目' : '暂无项目。可点击「+ 常用项目」,或在「人员」页导入含“项目”列的名单自动创建。'}</td></tr>`}</table>`;
+  const allOn = ids.length && ids.every(i => EVSEL.has(i));
+  $('#evtbl').innerHTML = `<table><tr>${adm ? `<th style="width:34px"><input type="checkbox" class="ck-all" ${allOn ? 'checked' : ''}></th><th></th>` : ''}<th>项目</th><th>类型</th><th>性别</th><th>开始</th><th>场地</th><th>道数</th><th>报名</th><th>状态</th></tr>
+  ${list.map(e => `<tr class="${EVSEL.has(e.id) ? 'sel' : ''}">${adm ? `<td><input type="checkbox" class="ck" value="${e.id}" ${EVSEL.has(e.id) ? 'checked' : ''}></td><td class="nw"><button class="sm" data-act="evForm" data-id="${e.id}">编辑</button></td>` : ''}
+  <td><a href="#/event/${e.id}"><b>${esc(evLabel(e))}</b></a>${e.scored ? '' : ' <span class="chip">不计分</span>'}${mineIds.includes(e.id) ? ' <span class="chip" style="background:var(--volt);color:var(--ink)">我负责</span>' : ''}</td><td class="nw">${KIND[e.kind]}</td><td class="nw">${GEN[e.gender]}</td>
+  <td class="nw">${dt(e.start_time) || '—'}</td><td class="nw">${esc(e.venue || '')}</td><td>${FIELDISH(e.kind) ? '—' : e.lanes}</td><td class="nw">${e.n_entries}${TEAMK(e.kind) ? ' 队' : ''}</td><td><span class="chip ${e.status}">${STAT[e.status]}</span></td></tr>`).join('') || `<tr><td colspan=${adm ? 10 : 8} class="mut">${EVS.length ? '没有符合条件的项目' : '暂无项目。可点击「+ 常用项目」,或在「人员」页导入含“项目”列的名单自动创建。'}</td></tr>`}</table>`;
   if (!adm) return;
-  const all = $('#evall'); if (all) all.onchange = () => { list.forEach(e => all.checked ? EVSEL.add(e.id) : EVSEL.delete(e.id)); drawEv(); };
-  document.querySelectorAll('.evc').forEach(c => c.onclick = ev => {
-    const id = +c.value, ids = list.map(e => e.id);
-    if (ev.shiftKey && EVLAST != null && ids.includes(EVLAST)) {       // Shift 连选
-      const a = ids.indexOf(EVLAST), b = ids.indexOf(id); ids.slice(Math.min(a, b), Math.max(a, b) + 1).forEach(i => c.checked ? EVSEL.add(i) : EVSEL.delete(i));
-    } else c.checked ? EVSEL.add(id) : EVSEL.delete(id);
-    EVLAST = id; drawEv(); });
+  bindChecks($('#evtbl'), EVSEL, ids, drawEv);
+  setDock({ n: EVSEL.size, total: ids.length, noun: '个项目', all: () => { ids.forEach(i => EVSEL.add(i)); drawEv(); }, inv: () => { ids.forEach(i => EVSEL.has(i) ? EVSEL.delete(i) : EVSEL.add(i)); drawEv(); }, none: () => { EVSEL.clear(); drawEv(); },
+    actions: [{ act: 'evBulkEdit', label: '批量修改' }, { act: 'evSched', label: '排时间' }, { act: 'evShift', label: '整体平移' }, { act: 'evHeats', label: '生成分组' }, { act: 'evBulkDel', label: '删除', cls: 'bad' }] });
 }
 ACT.evClearF = () => { Object.keys(EVF).forEach(k => EVF[k] = ''); render(); };
-ACT.evSelAll = () => { evFiltered().forEach(e => EVSEL.add(e.id)); drawEv(); };
-ACT.evSelInv = () => { evFiltered().forEach(e => EVSEL.has(e.id) ? EVSEL.delete(e.id) : EVSEL.add(e.id)); drawEv(); };
-ACT.evSelNone = () => { EVSEL.clear(); drawEv(); };
 const evNames = ids => { const m = EVS.filter(e => ids.includes(e.id)).map(evLabel); return m.slice(0, 6).map(esc).join('、') + (m.length > 6 ? ` 等 ${m.length} 项` : ''); };
 ACT.evBulkEdit = () => {
-  const ids = evSelIds();
-  modal(`批量修改(${ids.length} 项)`, `<p class="sm mut" style="margin-top:0">${evNames(ids)}</p><p class="sm">只修改填写/选择了的项目,<b>留空表示保持不变</b>。</p>
-  <div class="f"><label>场地</label><input id="b_venue" placeholder="如:田径场、沙坑">
-  <label>组别</label><input id="b_grp" placeholder="如:高一组"><label>类型</label><select id="b_kind"><option value="">(不修改)</option><option value="track">径赛(按时间,越小越好)</option><option value="field">田赛(按距离/次数,越大越好)</option><option value="game">游戏(记分制)</option><option value="relay">接力</option></select><label>性别</label><select id="b_gender"><option value="">(不修改)</option><option value="M">男</option><option value="F">女</option><option value="X">不限/混合</option></select>
-  <label>开始时间</label><input type="datetime-local" id="b_start"><label>预计时长(分)</label><input type="number" id="b_dur" min="1">
-  <label>跑道数</label><input type="number" id="b_lanes" min="1" max="12"><label>状态</label><select id="b_status"><option value="">(不修改)</option><option value="scheduled">未开始</option><option value="running">进行中</option><option value="done">已结束</option></select>
-  <label>计入团体分</label><select id="b_scored"><option value="">(不修改)</option><option value="1">计分</option><option value="0">不计分</option></select>
-  <label>成绩单位</label><input id="b_unit" placeholder="如 次、厘米、分"><label>计入报名上限</label><select id="b_inl"><option value="">(不修改)</option><option value="1">计入</option><option value="0">不计入</option></select></div>
-  <p class="sm mut">提示:要把场地/组别清空,请用单项「编辑」;要给不同项目排不同时间,请用「排时间」。</p>
-  <div class="row"><button class="pri" id="ok">应用到 ${ids.length} 项</button><button onclick="closeModal()">取消</button></div>`);
-  $('#ok').onclick = () => run(async () => {
-    const f = {}, v = id => $(id).value.trim();
-    if (v('#b_venue')) f.venue = v('#b_venue'); if (v('#b_grp')) f.grp = v('#b_grp'); if (v('#b_gender')) f.gender = v('#b_gender'); if (v('#b_kind')) f.kind = v('#b_kind'); if (v('#b_unit')) f.unit = v('#b_unit'); if (v('#b_inl')) f.in_limit = +v('#b_inl');
-    if (v('#b_start')) f.start_time = fromLocal(v('#b_start')); if (v('#b_dur')) f.duration = +v('#b_dur'); if (v('#b_lanes')) f.lanes = +v('#b_lanes');
-    if (v('#b_status')) f.status = v('#b_status'); if (v('#b_scored')) f.scored = +v('#b_scored');
-    if (!Object.keys(f).length) throw new Error('没有填写任何要修改的内容');
-    const r = await api('/api/events/bulk-update', 'POST', { ids, fields: f }); closeModal(); toast('已修改 ' + r.updated + ' 项'); render(); });
+  const ids = evSelIds(), sel = EVS.filter(e => ids.includes(e.id));
+  bulkModal({ title: `批量修改项目(${ids.length})`, n: ids.length, noun: '个项目', summary: evNames(ids),
+    fields: [
+      { key: 'venue', label: '场地', type: 'text', list: [...new Set(EVS.map(e => e.venue).filter(Boolean))], ph: '如:田径场、沙坑' },
+      { key: 'grp', label: '组别', type: 'text', list: [...new Set(EVS.map(e => e.grp).filter(Boolean))] },
+      { key: 'start_time', label: '开始时间', type: 'datetime' },
+      { key: 'duration', label: '预计时长(分)', type: 'number' },
+      { key: 'lanes', label: '跑道数', type: 'number' },
+      { key: 'status', label: '状态', type: 'select', options: Object.entries(STAT).map(([v, t]) => ({ v, t })) },
+      { key: 'kind', label: '类型', type: 'select', options: Object.entries(KIND).map(([v, t]) => ({ v, t: v === 'game' ? '游戏(按队伍参赛,记分)' : v === 'relay' ? '接力(按队伍参赛,计时)' : t })) },
+      { key: 'gender', label: '性别', type: 'select', options: [{ v: 'M', t: '男' }, { v: 'F', t: '女' }, { v: 'X', t: '不限/混合' }] },
+      { key: 'unit', label: '成绩单位', type: 'text', list: ['秒', '米', '分', '次', '厘米'], ph: '留空=按类型默认' },
+      { key: 'scored', label: '计入团体分', type: 'select', options: [{ v: 1, t: '计分' }, { v: 0, t: '不计分' }] },
+      { key: 'in_limit', label: '计入报名上限', type: 'select', options: [{ v: 1, t: '计入' }, { v: 0, t: '不计入' }] },
+      { key: 'note', label: '备注', type: 'text' }],
+    apply: async v => {
+      if (TEAMK(v.kind) && sel.some(e => !TEAMK(e.kind) && e.n_entries) && !confirm('所选项目中已有个人报名,改为按队伍参赛后,个人报名会并入各队的队伍报名(原个人成绩与分组将清除)。确定继续?')) throw new Error('已取消');
+      ['scored', 'in_limit'].forEach(k => { if (k in v) v[k] = +v[k]; });
+      const r = await api('/api/events/bulk-update', 'POST', { ids, fields: v }); return '已修改 ' + r.updated + ' 个项目'; } });
 };
 ACT.evShift = () => {
   const ids = evSelIds(), n = EVS.filter(e => ids.includes(e.id) && !e.start_time).length;
@@ -579,7 +631,7 @@ ACT.evForm = async d => {
 async function pageEvent(id) {
   const d = await api('/api/events/' + id), ev = d.event, rows = d.entries;
   const tab = sessionStorage['etab' + id] || (ev.status === 'scheduled' && !rows.some(r => r.status === 'ok') ? 'heats' : 'result');
-  const isRelay = ev.kind === 'relay', isField = FIELDISH(ev.kind);
+  const isRelay = TEAMK(ev.kind), isField = FIELDISH(ev.kind);
   const who = r => isRelay ? esc(r.label ? r.team_name + ' ' + r.label : r.team_name) : esc(r.athlete_name);
   const unit = unitOf(ev);
   const mem = r => isRelay ? `<div class="mut sm">${r.member_list?.length ? r.member_list.map((m, i) => (i + 1) + '.' + esc(m.name)).join('&nbsp; ') : '<i>未指定队员</i>'}</div>` : '';
@@ -678,7 +730,7 @@ ACT.genHeats = d => {
 ACT.relayEdit = async d => {
   const r = await api(`/api/entries/${d.id}/relay`);
   const sel = [...r.current];
-  modal(`编辑队员 — ${esc(r.team)} · ${esc(r.event)}`, `<p class="sm mut" style="margin-top:0">从「${esc(r.team)}」的人员中选出上场队员(最多 <b>${r.size}</b> 人),<b>按点选的先后顺序即为接力棒次</b>。带“报名”标记的,是导入名单里报名了该接力的人。</p>
+  modal(`编辑队员 — ${esc(r.team)} · ${esc(r.event)}`, `<p class="sm mut" style="margin-top:0">从「${esc(r.team)}」的人员中选出上场队员${r.size >= 99 ? '(人数不限)' : `(最多 <b>${r.size}</b> 人),<b>按点选的先后顺序即为接力棒次</b>`}。带“报名”标记的,是导入名单里报名了该项目的人。</p>
   <div class="row" style="margin-bottom:8px"><input id="rq" class="grow" placeholder="搜索姓名/号码"><label class="sm"><input type="checkbox" id="rall"> 显示全部(含性别不符、已在他队者)</label></div>
   <div id="rlist" style="max-height:46vh;overflow:auto;border:1px solid var(--bd);border-radius:8px"></div>
   <div class="row" style="margin-top:10px"><span class="grow sm" id="rcnt"></span><button class="pri" id="ok">保存</button><button onclick="closeModal()">取消</button></div>`, true);
@@ -689,19 +741,19 @@ ACT.relayEdit = async d => {
     $('#rlist').innerHTML = `<table>${list.map(a => `<tr><td style="width:30px"><input type="checkbox" data-a="${a.id}" ${sel.includes(a.id) ? 'checked' : ''} ${a.taken && !sel.includes(a.id) ? 'disabled' : ''}></td>
       <td style="width:30px"><b class="num">${sel.includes(a.id) ? sel.indexOf(a.id) + 1 : ''}</b></td><td>${bibTag(a.bib)}</td><td>${esc(a.name)}</td><td>${GEN[a.gender]}</td><td class="mut sm">${esc(a.grade || '')}</td>
       <td>${a.cand ? '<span class="chip" style="background:var(--volt);color:var(--ink)">报名</span>' : ''}${a.taken ? ' <span class="chip">已在他队</span>' : ''}${a.gender_ok ? '' : ' <span class="chip">性别不符</span>'}</td></tr>`).join('') || '<tr><td class="mut">没有可选人员</td></tr>'}</table>`;
-    $('#rcnt').textContent = `已选 ${sel.length} / ${r.size}`;
+    $('#rcnt').textContent = r.size >= 99 ? `已选 ${sel.length} 人` : `已选 ${sel.length} / ${r.size}`;
     $('#rlist').querySelectorAll('input[data-a]').forEach(c => c.onchange = () => { const id = +c.dataset.a;
       if (c.checked) { if (sel.length >= r.size) { c.checked = false; return toast(`最多 ${r.size} 人`, true); } sel.push(id); } else sel.splice(sel.indexOf(id), 1); draw(); });
   };
   $('#rq').oninput = draw; $('#rall').onchange = draw; draw();
   $('#ok').onclick = () => run(async () => { const x = await api(`/api/entries/${d.id}/relay`, 'PUT', { athlete_ids: sel });
-    closeModal(); toast(x.count < x.size ? `已保存(目前 ${x.count} 人,未满 ${x.size} 人)` : '已保存', x.count < x.size); render(); });
+    closeModal(); toast(x.size < 99 && x.count < x.size ? `已保存(目前 ${x.count} 人,未满 ${x.size} 人)` : '已保存', x.size < 99 && x.count < x.size); render(); });
 };
 const LIM = {};
 function drawLimit(evs) {
   const base = e => e.name.replace(/^(男子|女子|混合)/, '');
   const m = new Map();
-  evs.filter(e => e.kind !== 'relay').forEach(e => { const k = base(e); if (!m.has(k)) m.set(k, []); m.get(k).push(e); });
+  evs.filter(e => !TEAMK(e.kind)).forEach(e => { const k = base(e); if (!m.has(k)) m.set(k, []); m.get(k).push(e); });
   const items = [...m.entries()].map(([k, a]) => { const on = a.filter(e => e.in_limit !== 0).length; return { k, a, kind: a[0].kind, st: on === a.length ? true : on === 0 ? false : 'mix' }; });
   items.forEach(it => { if (!(it.k in LIM)) LIM[it.k] = it.st; });
   const box = $('#lim'), q = () => ($('#lq')?.value || '').trim();
@@ -711,7 +763,7 @@ function drawLimit(evs) {
     $('#llist').querySelectorAll('input[data-k]').forEach(c => { if (LIM[c.dataset.k] === 'mix') c.indeterminate = true; c.onchange = () => { LIM[c.dataset.k] = c.checked; c.indeterminate = false; }; });
   };
   const setAll = fn => { items.filter(it => !q() || it.k.includes(q())).forEach(it => LIM[it.k] = fn(it)); body(); };
-  box.innerHTML = `<h2>报名上限范围</h2><p class="mut sm">「每人最多报名」只统计<b>勾选</b>的项目;没勾选的(如游戏类、集体项目)不占名额。接力项目不计入。同名的各组别/性别项目一并设置;也可在「项目」页批量修改或在单个项目里调整。</p>
+  box.innerHTML = `<h2>报名上限范围</h2><p class="mut sm">「每人最多报名」只统计<b>勾选</b>的项目;没勾选的(如游戏类、集体项目)不占名额。接力、游戏(按队伍参赛)不计入。同名的各组别/性别项目一并设置;也可在「项目」页批量修改或在单个项目里调整。</p>
   <div class="row" style="margin-bottom:8px"><input id="lq" placeholder="筛选项目名称" style="max-width:200px"><a href="#" id="l1">全部勾选</a><a href="#" id="l0">全部取消</a>
   ${[...new Set(items.map(it => it.kind))].map(k => `<a href="#" data-lk="${k}">只勾${KIND[k]}</a>`).join('')}<span class="grow"></span><button class="pri" id="lsave">保存范围</button></div><div id="llist" class="limit-grid"></div>`;
   $('#lq').oninput = body; $('#l1').onclick = e => { e.preventDefault(); setAll(() => true); }; $('#l0').onclick = e => { e.preventDefault(); setAll(() => false); };
@@ -726,9 +778,9 @@ function drawLimit(evs) {
 }
 ACT.addEntries = async d => {
   const ev = window.__ev.event;
-  if (ev.kind === 'relay') {
+  if (TEAMK(ev.kind)) {
     const teams = await api('/api/teams');
-    modal('添加接力队', `<div class="f"><label>队伍</label><select id="rt">${teams.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>
+    modal(ev.kind === 'game' ? '添加参赛队' : '添加接力队', `<div class="f"><label>队伍</label><select id="rt">${teams.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>
     <label>队标识</label><input id="rl" placeholder="如 A队(同一队多组参赛时区分)"><label>队员</label><input id="rm" placeholder="姓名,用顿号分隔(可空)"></div>
     <div class="row"><button class="pri" id="ok">添加</button><button onclick="closeModal()">取消</button></div>`);
     $('#ok').onclick = () => run(async () => { await api(`/api/events/${d.id}/entries`, 'POST', { team_id: $('#rt').value, label: $('#rl').value, members: $('#rm').value }); closeModal(); render(); });
@@ -755,45 +807,55 @@ ACT.addEntries = async d => {
 };
 
 /* ============ 人员 ============ */
+const ATHSEL = new Set();
+let ATH = [], ATHT = [], ATHG = [];
 async function pageAthletes() {
   const f = JSON.parse(sessionStorage.af || '{}');
   const qs = new URLSearchParams(Object.entries(f).filter(([, v]) => v)).toString();
   const [teams, ath, grades] = await Promise.all([api('/api/teams'), api('/api/athletes?' + qs), api('/api/grades')]);
+  ATH = ath; ATHT = teams; ATHG = grades; const have = new Set(ath.map(a => a.id)); [...ATHSEL].forEach(i => have.has(i) || ATHSEL.delete(i));
   const adm = isAdmin();
   $('#app').innerHTML = needAdminHint() + `<div class="card"><div class="row" style="margin-bottom:10px"><h2 class="grow" style="margin:0">人员(${ath.length})</h2>
-  ${adm ? `<button data-act="athForm">+ 新增</button><button data-act="athImport">批量导入</button><button data-act="bibs">自动编号</button><button data-act="autoTeam">自动均衡分队</button>` : ''}<a class="btn sm" href="/api/export/athletes.csv">导出</a></div>
-  <div class="row" style="margin-bottom:10px"><input id="q" placeholder="搜索姓名/号码" value="${esc(f.q || '')}" style="width:150px">
+  ${adm ? `<button data-act="athImport">批量导入</button><button data-act="bibs">自动编号</button><button data-act="autoTeam">自动均衡分队</button><button class="pri" data-act="athForm">+ 新增</button>` : ''}<a class="btn sm" href="/api/export/athletes.csv">导出</a></div>
+  <div class="fbar"><input id="q" placeholder="搜索姓名/号码" value="${esc(f.q || '')}" style="min-width:160px">
     <select id="fgr"><option value="">全部年级</option>${grades.map(g => `<option>${esc(g)}</option>`).join('')}</select>
     <select id="ft"><option value="">全部队伍</option>${teams.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>
-    <select id="fg"><option value="">男女不限</option><option value="M">男</option><option value="F">女</option></select><label><input type="checkbox" id="fu" ${f.unassigned ? 'checked' : ''}> 仅未分队</label></div>
-  ${adm ? `<div class="row" style="margin-bottom:10px;padding:8px 10px;background:var(--row);border-radius:8px"><span class="sm">已选 <b id="sc">0</b> 人 →</span>
-    <select id="bt"><option value="">改队伍…</option><option value="0">(取消分队)</option>${teams.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select><button id="bg" class="sm">应用</button>
-    <input id="bgr" list="gl" placeholder="设置年级" style="width:110px"><datalist id="gl">${grades.map(g => `<option>${esc(g)}</option>`).join('')}</datalist><button id="bgb" class="sm">应用</button>
-    <span class="grow"></span><button id="bdel" class="sm bad">删除所选</button></div>` : ''}
-  <div class="tw"><table><tr>${adm ? '<th><input type="checkbox" id="all"></th>' : ''}<th>号码</th><th>姓名</th><th>性别</th><th>年级</th><th>队伍</th><th>报名项目</th><th></th></tr>
-  ${ath.slice(0, 400).map(a => `<tr>${adm ? `<td style="white-space:nowrap"><button class="sm" data-act="athForm" data-id="${a.id}">编辑</button></td><td><input type="checkbox" class="ck" value="${a.id}"></td>` : `<td style="white-space:nowrap"><button class="sm" data-act="athForm" data-id="${a.id}">编辑</button></td>`}<td>${bibTag(a.bib)}</td><td><b style="white-space:nowrap">${esc(a.name)}</b></td><td>${GEN[a.gender]}</td><td style="white-space:nowrap">${esc(a.grade || '')}</td><td style="white-space:nowrap">${tag(a.team_name, a.team_color)}</td>
-  <td class="sm" style="white-space:nowrap">${a.event_names ? esc(a.event_names) : '<span class="mut">未报名</span>'}</td></tr>`).join('') || '<tr><td colspan=8 class="mut">没有匹配的人员</td></tr>'}</table></div>${ath.length > 400 ? '<p class="mut sm">仅显示前 400 人,请用搜索缩小范围。</p>' : ''}</div>`;
+    <select id="fg"><option value="">男女不限</option><option value="M">男</option><option value="F">女</option></select><label class="sm"><input type="checkbox" id="fu" ${f.unassigned ? 'checked' : ''}> 仅未分队</label></div>
+  <div class="tw" id="atbl"></div>${ath.length > 400 ? '<p class="mut sm">仅显示前 400 人,请用搜索缩小范围。</p>' : ''}</div>`;
   $('#ft').value = f.team_id || ''; $('#fg').value = f.gender || ''; $('#fgr').value = f.grade || '';
   const apply = () => { sessionStorage.af = JSON.stringify({ q: $('#q').value, team_id: $('#ft').value, gender: $('#fg').value, grade: $('#fgr').value, unassigned: $('#fu').checked ? 1 : '' }); render(); };
   ['q', 'ft', 'fg', 'fgr', 'fu'].forEach(i => $('#' + i).onchange = apply);
-  if (adm) {
-    const sel = () => [...document.querySelectorAll('.ck:checked')].map(c => +c.value);
-    const cnt = () => $('#sc').textContent = sel().length;
-    document.querySelectorAll('.ck').forEach(c => c.onchange = cnt);
-    $('#all').onchange = e => { document.querySelectorAll('.ck').forEach(c => c.checked = e.target.checked); cnt(); };
-    $('#bg').onclick = () => run(async () => { const ids = sel(); if (!ids.length || $('#bt').value === '') return toast('请先勾选人员并选择队伍', true);
-      await api('/api/athletes/bulk-update', 'POST', { ids, team_id: +$('#bt').value || null }); toast('已修改 ' + ids.length + ' 人的队伍'); render(); });
-    $('#bgb').onclick = () => run(async () => { const ids = sel(); if (!ids.length) return toast('请先勾选人员', true);
-      await api('/api/athletes/bulk-update', 'POST', { ids, grade: $('#bgr').value }); toast('已修改 ' + ids.length + ' 人的年级'); render(); });
-    $('#bdel').onclick = () => run(async () => { const ids = sel(); if (!ids.length) return toast('请先勾选人员', true);
-      if (!confirm(`确定删除所选 ${ids.length} 人?其报名与成绩将一并删除,且无法恢复。`)) return;
-      await api('/api/athletes/delete-many', 'POST', { ids }); toast('已删除'); render(); });
-  }
+  drawAth();
 }
+function drawAth() {
+  const adm = isAdmin(), list = ATH.slice(0, 400), ids = list.map(a => a.id), allOn = ids.length && ids.every(i => ATHSEL.has(i));
+  $('#atbl').innerHTML = `<table><tr>${adm ? `<th style="width:34px"><input type="checkbox" class="ck-all" ${allOn ? 'checked' : ''}></th><th></th>` : ''}<th>号码</th><th>姓名</th><th>性别</th><th>年级</th><th>队伍</th><th>报名项目</th></tr>
+  ${list.map(a => `<tr class="${ATHSEL.has(a.id) ? 'sel' : ''}">${adm ? `<td><input type="checkbox" class="ck" value="${a.id}" ${ATHSEL.has(a.id) ? 'checked' : ''}></td><td class="nw"><button class="sm" data-act="athForm" data-id="${a.id}">编辑</button></td>` : ''}
+  <td>${bibTag(a.bib)}</td><td class="nw"><b>${esc(a.name)}</b></td><td class="nw">${GEN[a.gender]}</td><td class="nw">${esc(a.grade || '')}</td><td class="nw">${tag(a.team_name, a.team_color)}</td>
+  <td class="sm c-ev">${a.event_names ? esc(a.event_names) : '<span class="mut">未报名</span>'}</td></tr>`).join('') || `<tr><td colspan=${adm ? 8 : 6} class="mut">没有匹配的人员</td></tr>`}</table>`;
+  if (!adm) return;
+  bindChecks($('#atbl'), ATHSEL, ids, drawAth);
+  setDock({ n: ATHSEL.size, total: ids.length, noun: '人', all: () => { ids.forEach(i => ATHSEL.add(i)); drawAth(); }, inv: () => { ids.forEach(i => ATHSEL.has(i) ? ATHSEL.delete(i) : ATHSEL.add(i)); drawAth(); }, none: () => { ATHSEL.clear(); drawAth(); },
+    actions: [{ act: 'athBulkEdit', label: '批量修改' }, { act: 'athBulkDel', label: '删除', cls: 'bad' }] });
+}
+ACT.athBulkEdit = () => {
+  const ids = [...ATHSEL], names = ATH.filter(a => ATHSEL.has(a.id)).map(a => a.name);
+  bulkModal({ title: `批量修改人员(${ids.length})`, n: ids.length, noun: '人', summary: names.slice(0, 8).map(esc).join('、') + (names.length > 8 ? ` 等 ${names.length} 人` : ''),
+    fields: [
+      { key: 'team_id', label: '队伍', type: 'select', options: [{ v: '', t: '(取消分队)' }, ...ATHT.map(t => ({ v: t.id, t: t.name }))] },
+      { key: 'grade', label: '年级', type: 'text', list: ATHG, ph: '如 G2-G3' },
+      { key: 'gender', label: '性别', type: 'select', options: [{ v: 'M', t: '男' }, { v: 'F', t: '女' }, { v: 'X', t: '未填/不限' }] }],
+    apply: async v => { if ('team_id' in v) v.team_id = v.team_id === '' ? null : +v.team_id;
+      await api('/api/athletes/bulk-update', 'POST', { ids, ...v }); return '已修改 ' + ids.length + ' 人'; } });
+};
+ACT.athBulkDel = () => { const ids = [...ATHSEL]; if (!confirm(`确定删除所选 ${ids.length} 人?其报名与成绩将一并删除,且无法恢复。`)) return;
+  return api('/api/athletes/delete-many', 'POST', { ids }).then(() => { ids.forEach(i => ATHSEL.delete(i)); toast('已删除 ' + ids.length + ' 人'); render(); }); };
+ACT.dkAll = () => DOCK?.all(); ACT.dkInv = () => DOCK?.inv(); ACT.dkNone = () => DOCK?.none();
+ACT.stab = d => { sessionStorage.stab = d.t; render(); };
 ACT.athForm = async d => {
   const [teams, list, events, grades] = await Promise.all([api('/api/teams'), d.id ? api('/api/athletes') : [], api('/api/events'), api('/api/grades')]);
   const a = d.id ? list.find(x => x.id == d.id) : { gender: 'M', event_ids: [] };
-  const evs = events.filter(e => e.kind !== 'relay'), have = new Set(a.event_ids);
+  const evs = events.filter(e => !TEAMK(e.kind)), have = new Set(a.event_ids);
   modal(d.id ? '编辑人员 — ' + esc(a.name) : '新增人员', `<form id="af"><div class="f">
   <label>姓名</label><input name="name" required value="${esc(a.name || '')}">
   <label>性别</label><select name="gender"><option value="M">男</option><option value="F">女</option><option value="X">未填/不限</option></select>
@@ -830,7 +892,7 @@ ACT.athImport = () => {
   <ul class="sm mut" style="margin:6px 0 10px;padding-left:20px"><li>“项目”列可填多个,用 <b>、</b> 或 ; 分隔,如:<code>100米、跳远</code>。系统按选手性别自动补“男子/女子”,也可写全名(如 <code>男子100米</code>);同名项目有组别时写 <code>男子100米高一组</code>。</li>
   <li>已存在的人员(号码相同,或姓名+队伍相同)会<b>更新</b>并追加项目,不会重复创建。</li>
   <li><b>项目不存在时会自动创建</b>:按“项目 + 选手性别 + 组别”建立,如 <code>100米</code> + 男 + <code>甲组</code> → <b>男子100米甲组</b>(含“接力”的建为接力项目,“跳/掷/铅球”等建为田赛,其余为径赛)。创建后可在「项目」页批量设置时间与场地。</li>
-  <li><b>接力项目</b>:导入时会为各队建立接力队,报名了该接力的人作为候选;之后在接力项目页点「编辑队员」选出上场的 4 人(人数可在设置中调整)。</li>
+  <li><b>接力、游戏项目按队伍参赛</b>:导入时会为各队建立一条队伍报名。接力里报名的人作为候选,之后在项目页点「编辑队员」选出上场的 4 人(人数可在设置调整);游戏里报名的人直接记为该队的参赛队员,可随时调整。</li>
   <li>没有“组别”列时,<b>自动按“年级”列分组别</b>(如 G1、G2-G3、G4-G5),同一项目会按年级组分别建项目;性别留空的学生建不分性别的项目。</li>
   <li>没写表头时按顺序:姓名,性别,队伍,号码,年级,项目,组别,备注。</li></ul>
   <div class="row" style="margin-bottom:8px"><input type="file" id="imf" accept=".csv,.txt,.tsv"><a href="#" data-act="tpl">下载模板</a></div>
@@ -925,6 +987,11 @@ async function pageSettings() {
   <div class="card"><h2>演示与重置</h2><div class="row"><button id="demo">载入演示数据(试用)</button><button class="bad" id="reset">清空全部数据</button></div><p class="mut sm">清空前会自动在 data/backups 留一份备份。</p></div>
   <div class="card"><h2>操作日志</h2><div class="tw"><table>${lg.map(l => `<tr><td class="sm mut">${l.ts}</td><td>${l.role}</td><td>${esc(l.action)}</td><td class="sm">${esc(l.detail)}</td></tr>`).join('') || '<tr><td class="mut">暂无</td></tr>'}</table></div></div>`;
   drawLimit(evAll);
+  const PANES = [['赛事规则', ['赛事与计分规则', '报名上限范围']], ['账号权限', ['管理员密码', '录入员账号']], ['数据与日志', ['数据导出与备份', '演示与重置', '操作日志']], ['访问与检查', ['其他设备如何访问', '时间冲突检查']]];
+  const cur = sessionStorage.stab || PANES[0][0], pane = PANES.find(p => p[0] === cur) || PANES[0];
+  const cards = [...document.querySelectorAll('#app > .card')];
+  cards.forEach(c => { const h = c.id === 'lim' ? '报名上限范围' : (c.querySelector('h2')?.textContent || '').trim(); if (!pane[1].includes(h)) c.style.display = 'none'; });
+  cards[0].insertAdjacentHTML('beforebegin', `<div class="tabs">${PANES.map(p => `<button class="${p[0] === pane[0] ? 'on' : ''}" data-act="stab" data-t="${p[0]}">${p[0]}</button>`).join('')}</div>`);
   $('#sf').onsubmit = e => { e.preventDefault(); run(async () => { const o = Object.fromEntries(new FormData(e.target));
     ['points_individual', 'points_relay'].forEach(k => { o[k] = o[k].split(/[,，\s]+/).filter(Boolean).map(Number); if (o[k].some(isNaN)) throw new Error('名次分格式有误'); });
     await api('/api/settings', 'PUT', o); toast('已保存'); await boot(false); }); };
