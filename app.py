@@ -46,6 +46,14 @@ CREATE TABLE IF NOT EXISTS entries(
   lane INTEGER, seed REAL, value REAL, status TEXT DEFAULT 'reg');
 CREATE UNIQUE INDEX IF NOT EXISTS ux_entry_ath ON entries(event_id, athlete_id) WHERE athlete_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS ix_entry_event ON entries(event_id);
+CREATE TABLE IF NOT EXISTS relay_members(
+  entry_id INTEGER NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+  athlete_id INTEGER NOT NULL REFERENCES athletes(id) ON DELETE CASCADE,
+  leg INTEGER, PRIMARY KEY(entry_id, athlete_id));
+CREATE TABLE IF NOT EXISTS relay_cand(
+  event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  athlete_id INTEGER NOT NULL REFERENCES athletes(id) ON DELETE CASCADE,
+  PRIMARY KEY(event_id, athlete_id));
 CREATE TABLE IF NOT EXISTS log(id INTEGER PRIMARY KEY, ts TEXT, role TEXT, action TEXT, detail TEXT);
 CREATE TABLE IF NOT EXISTS recorders(
   id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, name TEXT, pw TEXT NOT NULL);
@@ -62,6 +70,7 @@ DEFAULTS = {
     'participation': 1,       # 完赛参与分(每个有效成绩计一次)
     'record_bonus': 5,        # 破纪录加分(可被项目覆盖)
     'max_events': 3,          # 每人最多报名项目数(超出需强制)
+    'relay_size': 4,          # 接力每队上场人数
     'lanes': 8,
     'heat_gap': 5,            # 相邻分组间隔(分钟)
 }
@@ -88,6 +97,11 @@ def init_db():
     c.executescript(SCHEMA)
     if 'grade' not in [r[1] for r in c.execute('PRAGMA table_info(athletes)')]:
         c.execute('ALTER TABLE athletes ADD COLUMN grade TEXT')
+    ecols = [r[1] for r in c.execute('PRAGMA table_info(events)')]
+    if 'unit' not in ecols:
+        c.execute('ALTER TABLE events ADD COLUMN unit TEXT')
+    if 'in_limit' not in ecols:
+        c.execute('ALTER TABLE events ADD COLUMN in_limit INTEGER DEFAULT 1')
     c.commit()
     c.close()
 
@@ -242,10 +256,27 @@ def parse_value(txt):
         raise ValueError('无法识别的成绩: %s' % txt)
 
 
-def fmt_value(v, kind):
+FIELDISH = ('field', 'game')                 # 数值越大越好、不设跑道的项目类型
+KINDS = ('track', 'field', 'game', 'relay')
+COUNT_UNITS = ('次', '分', '个', '级', '趟', '环')   # 整数计量单位:成绩为整数时不显示小数
+UNIT_DEFAULT = {'track': '秒', 'relay': '秒', 'field': '米', 'game': '分'}
+
+
+def unit_of(ev):
+    return (ev['unit'] if 'unit' in ev.keys() else None) or UNIT_DEFAULT.get(ev['kind'], '')
+
+
+def evl(name, grp):
+    """项目显示名:名称(组别)"""
+    return name + ('(%s)' % grp if grp else '')
+
+
+def fmt_value(v, kind, unit=None):
     if v is None:
         return ''
-    if kind == 'field':
+    if kind in FIELDISH:
+        if unit in COUNT_UNITS and float(v).is_integer():
+            return '%d' % v
         return '%.2f' % v
     if v >= 60:
         m = int(v // 60)
@@ -254,7 +285,7 @@ def fmt_value(v, kind):
 
 
 def better(a, b, kind):  # a 是否优于 b
-    return a < b if kind != 'field' else a > b
+    return a < b if kind not in FIELDISH else a > b
 
 
 def entry_rows(d, eid):
@@ -273,7 +304,7 @@ def compute(d, ev, S, rows=None):
     """返回该项目所有报名行(附排名/得分)。并列取名次区间平均分。"""
     rows = rows if rows is not None else entry_rows(d, ev['id'])
     kind = ev['kind']
-    asc = kind != 'field'
+    asc = kind not in FIELDISH
     table = json.loads(ev['points_json']) if ev['points_json'] else (
         S['points_relay'] if kind == 'relay' else S['points_individual'])
     key = lambda r: round(r['value'], 2)
@@ -281,7 +312,7 @@ def compute(d, ev, S, rows=None):
                    key=(lambda r: key(r)) if asc else (lambda r: -key(r)))
     for r in rows:
         r.update(rank=None, points=0, part=0, bonus=0, record=False, total=0,
-                 value_text=fmt_value(r['value'], kind) if r['status'] == 'ok' else '')
+                 value_text=fmt_value(r['value'], kind, unit_of(ev)) if r['status'] == 'ok' else '')
     i = 0
     while i < len(valid):
         j = i
@@ -312,8 +343,9 @@ def compute(d, ev, S, rows=None):
 
 def ev_dict(r):
     e = dict(r)
+    e['unit_text'] = unit_of(e)
     e['points_list'] = json.loads(e['points_json']) if e.get('points_json') else None
-    e['record_text'] = fmt_value(e['record_value'], e['kind']) if e.get('record_value') is not None else ''
+    e['record_text'] = fmt_value(e['record_value'], e['kind'], unit_of(e)) if e.get('record_value') is not None else ''
     return e
 
 
@@ -500,6 +532,17 @@ def norm_gender(g_):
     return 'F' if g_ in ('F', '女', 'FEMALE', 'W') else 'M'
 
 
+def limit_count(d, aid):
+    """该选手已报的、计入报名上限的项目数。"""
+    return d.execute("SELECT COUNT(*) FROM entries e JOIN events v ON v.id=e.event_id WHERE e.athlete_id=? AND v.in_limit=1 AND v.kind!='relay'", (aid,)).fetchone()[0]
+
+
+def import_gender(g_):
+    """导入用:空白/混合/不限 → 'X'(不分性别),其余按男女。"""
+    t = str(g_ or '').strip()
+    return 'X' if t in ('', '混合', '不限', '未填', 'X', 'x') else norm_gender(t)
+
+
 def descendants(d, tid):
     out, stack = {tid}, [tid]
     while stack:
@@ -612,9 +655,10 @@ def athlete_set_events(aid):
     for eid in want:
         ev = d.execute("SELECT name,grp,gender FROM events WHERE id=?", (eid,)).fetchone()
         if ev and ev['gender'] in ('M', 'F') and ev['gender'] != a['gender']:
-            warnings.append('“%s%s”与选手性别不符' % (ev['name'], ev['grp'] or ''))
-    if len(want) > S['max_events']:
-        warnings.append('已报 %d 项,超过上限 %d 项' % (len(want), int(S['max_events'])))
+            warnings.append('“%s”与选手性别不符' % evl(ev['name'], ev['grp']))
+    n_lim = d.execute("SELECT COUNT(*) FROM events WHERE in_limit=1 AND kind!='relay' AND id IN (%s)" % (','.join(str(int(i)) for i in want) or '0')).fetchone()[0]
+    if n_lim > S['max_events']:
+        warnings.append('已报 %d 项(计入上限的),超过上限 %d 项' % (n_lim, int(S['max_events'])))
     for c in find_conflicts(d):
         if c['aid'] == aid:
             warnings.append('时间冲突:%s(%s)与 %s(%s)' % (c['a'], c['at'], c['b'], c['bt']))
@@ -662,10 +706,19 @@ def athlete_delete_many():
     return jsonify(deleted=len(ids))
 
 
+def infer_unit(name):
+    for k, u in (('跳绳', '次'), ('仰卧起坐', '次'), ('俯卧撑', '次'), ('引体', '次'), ('体前屈', '厘米')):
+        if k in name:
+            return u
+    return None
+
+
 def infer_kind(name):
     if '接力' in name:
         return 'relay'
-    if any(k in name for k in ('跳', '掷', '铅球', '铁饼', '标枪', '链球', '实心球', '垒球', '投')):
+    if any(k in name for k in ('抢', '大摆锤', '步步为营', '拔河', '游戏', '接龙', '夹球', '运球', '传球', '踢', '拍')):
+        return 'game'
+    if any(k in name for k in ('跳', '掷', '铅球', '铁饼', '标枪', '链球', '实心球', '垒球', '投', '仰卧起坐', '折返跑', '体前屈', '俯卧撑', '引体')):
         return 'field'
     return 'track'
 
@@ -702,7 +755,7 @@ def athlete_import():
     teams = {r['name']: r['id'] for r in d.execute("SELECT id,name FROM teams")}
     evs = [dict(r) for r in d.execute("SELECT id,name,grp,kind,gender FROM events")]
     S = settings()
-    stat = dict(imported=0, updated=0, new_teams=0, registered=0)
+    stat = dict(imported=0, updated=0, new_teams=0, registered=0, relay_teams=0)
     skipped, warnings = [], []
     cols, first = list(DEFAULT_COLS), True
 
@@ -714,6 +767,8 @@ def athlete_import():
         for pre, g in (('男子', 'M'), ('女子', 'F'), ('混合', 'X'), ('男', 'M'), ('女', 'F')):
             if t.startswith(pre) and len(t) > len(pre):
                 return {'M': '男子', 'F': '女子', 'X': '混合'}[g] + t[len(pre):], g, t[len(pre):]
+        if gender == 'X':      # 性别未填:建不分性别的项目,不加前缀
+            return t, 'X', t
         return ('男子' if gender == 'M' else '女子') + t, gender, t
 
     def find_event(tok, gender, grp):
@@ -722,17 +777,19 @@ def athlete_import():
             eg = ev['grp'] or ''
             if grp and eg != grp:
                 continue
-            if (ev['name'] == name and ev['gender'] in (g, 'X')) or tok in (ev['name'], ev['name'] + eg, eg + ev['name']):
+            if (ev['name'] == name and ev['gender'] in (g, 'X')) or tok in (ev['name'], ev['name'] + eg, eg + ev['name'], evl(ev['name'], eg), ev['name'] + ' ' + eg):
                 return ev
         if not p.get('create_events', True) or (g in ('M', 'F') and g != gender):
             return None
         kind = infer_kind(base)
         cur = d.execute("INSERT INTO events(%s) VALUES(%s)" % (EV_COLS, ','.join('?' * 15)),
-                        (name, kind, g, grp or None, None, {'relay': 25, 'field': 60}.get(kind, 20),
-                         None if kind == 'field' else '田径场', int(S['lanes']), 'scheduled', 1, None, None, None, None, None))
+                        (name, kind, g, grp or None, None, {'relay': 25, 'field': 60, 'game': 30}.get(kind, 20),
+                         None if kind in FIELDISH else '田径场', int(S['lanes']), 'scheduled', 1, None, None, None, None, None))
+        if infer_unit(base):
+            d.execute("UPDATE events SET unit=? WHERE id=?", (infer_unit(base), cur.lastrowid))
         ev = dict(id=cur.lastrowid, name=name, grp=grp or None, kind=kind, gender=g)
         evs.append(ev)
-        created.append(name + (grp or ''))
+        created.append(evl(name, grp))
         return ev
 
     for ln, line in enumerate((p.get('text') or '').splitlines(), 1):
@@ -780,35 +837,41 @@ def athlete_import():
                 ex = found[0] if found else None
         if ex:
             aid = ex['id']
-            gender = norm_gender(row['gender']) if row.get('gender') else ex['gender']
+            gender = import_gender(row['gender']) if row.get('gender') else ex['gender']
             d.execute("UPDATE athletes SET gender=?, grade=COALESCE(?,grade), bib=COALESCE(?,bib), team_id=COALESCE(?,team_id), note=COALESCE(?,note) WHERE id=?",
                       (gender, row.get('grade'), row.get('bib'), tid, row.get('note'), aid))
             stat['updated'] += 1
         else:
-            gender = norm_gender(row.get('gender'))
+            gender = import_gender(row.get('gender'))
             aid = d.execute("INSERT INTO athletes(name,gender,team_id,bib,grade,note) VALUES(?,?,?,?,?,?)",
                             (row['name'], gender, tid, row.get('bib'), row.get('grade'), row.get('note'))).lastrowid
             stat['imported'] += 1
         n_reg = d.execute("SELECT COUNT(*) FROM entries WHERE athlete_id=?", (aid,)).fetchone()[0]
         gsrc = p.get('group_by', 'auto')
-        grp_val = None if gsrc == 'none' else (row.get('grade') if gsrc == 'grade' else row.get('grp'))
+        grp_val = None if gsrc == 'none' else (row.get('grade') if gsrc == 'grade' else (row.get('grp') or row.get('grade')))   # auto:有“组别”列用组别,否则按年级
         for tok in [x.strip() for x in __import__('re').split(r'[、;；|/,，]+', row.get('events', '')) if x.strip()]:
             ev = find_event(tok, gender, grp_val)
             if not ev:
                 warnings.append('第%d行 %s:找不到项目“%s”(或与性别不符)' % (ln, row['name'], tok))
-            elif ev['kind'] == 'relay':
-                if ev['id'] not in relay_noted:
-                    relay_noted.add(ev['id'])
-                    warnings.append('接力项目“%s”已创建/匹配,个人不会自动报名,请在项目页按队伍报名' % (ev['name'] + (ev['grp'] or '')))
             elif ev['gender'] in ('M', 'F') and ev['gender'] != gender:
                 warnings.append('第%d行 %s:性别与项目“%s”不符,未报名' % (ln, row['name'], tok))
+            elif ev['kind'] == 'relay':        # 接力:记下候选队员,并给其所在队伍建一支接力队
+                relay_noted.add(ev['id'])
+                d.execute("INSERT OR IGNORE INTO relay_cand(event_id,athlete_id) VALUES(?,?)", (ev['id'], aid))
+                tid_ = d.execute("SELECT team_id FROM athletes WHERE id=?", (aid,)).fetchone()[0]
+                if tid_ and not d.execute("SELECT 1 FROM entries WHERE event_id=? AND team_id=?", (ev['id'], tid_)).fetchone():
+                    d.execute("INSERT INTO entries(event_id,team_id) VALUES(?,?)", (ev['id'], tid_))
+                    stat['relay_teams'] += 1
             else:
                 c = d.execute("INSERT OR IGNORE INTO entries(event_id,athlete_id) VALUES(?,?)", (ev['id'], aid))
                 if c.rowcount:
                     stat['registered'] += 1
                     n_reg += 1
+        n_reg = limit_count(d, aid)
         if n_reg > S['max_events']:
             warnings.append('第%d行 %s:共报 %d 项,超过上限 %d(已导入,请留意)' % (ln, row['name'], n_reg, int(S['max_events'])))
+    if relay_noted:
+        warnings.append('共 %d 个接力项目,已为各队建立接力队 %d 支(报名该接力的人记为候选)。请到接力项目页点「编辑队员」选出上场的 %d 人。' % (len(relay_noted), stat['relay_teams'], int(S['relay_size'])))
     log('导入人员', '新增%d 更新%d 报名%d' % (stat['imported'], stat['updated'], stat['registered']))
     d.commit()
     return jsonify(skipped=skipped, warnings=warnings, created_events=created, **stat)
@@ -848,7 +911,7 @@ def event_body(p):
     name = (p.get('name') or '').strip()
     if not name:
         raise ValueError('项目名称不能为空')
-    kind = p.get('kind') if p.get('kind') in ('track', 'field', 'relay') else 'track'
+    kind = p.get('kind') if p.get('kind') in KINDS else 'track'
     pj = None
     if p.get('points_list'):
         pj = json.dumps([float(x) for x in p['points_list']])
@@ -876,12 +939,20 @@ def events_list():
     return jsonify(rows)
 
 
+def ev_extras(d, eid, p):
+    if 'unit' in p:
+        d.execute("UPDATE events SET unit=? WHERE id=?", ((p['unit'] or '').strip() or None, eid))
+    if 'in_limit' in p:
+        d.execute("UPDATE events SET in_limit=? WHERE id=?", (1 if p['in_limit'] in (1, '1', True) else 0, eid))
+
+
 @app.post('/api/events')
 @need('admin')
 def event_create():
     b = event_body(request.get_json() or {})
     d = db()
     cur = d.execute("INSERT INTO events(%s) VALUES(%s)" % (EV_COLS, ','.join('?' * 15)), b)
+    ev_extras(d, cur.lastrowid, request.get_json() or {})
     log('新建项目', b[0])
     d.commit()
     return jsonify(id=cur.lastrowid)
@@ -899,7 +970,7 @@ def event_presets():
         for name, kind, dur in PRESETS:
             d.execute("INSERT INTO events(%s) VALUES(%s)" % (EV_COLS, ','.join('?' * 15)),
                       (('男子' if g_ == 'M' else '女子' if g_ == 'F' else '') + name, kind, g_, p.get('grp') or None,
-                       None, dur, '田径场' if kind != 'field' else None, int(S['lanes']), 'scheduled', 1, None, None, None, None, None))
+                       None, dur, '田径场' if kind not in FIELDISH else None, int(S['lanes']), 'scheduled', 1, None, None, None, None, None))
             n += 1
     log('添加常用项目', str(n))
     d.commit()
@@ -918,6 +989,12 @@ def event_get(eid):
     rows_sorted = sorted(rows, key=lambda r: (r['heat_sort'] if r['heat_sort'] is not None else 999,
                                              r['lane'] or 999, r['bib'] or '', r['id']))
     heats = [dict(h) for h in d.execute("SELECT * FROM heats WHERE event_id=? ORDER BY sort,id", (eid,))]
+    if ev['kind'] == 'relay':
+        mm = {}
+        for r in d.execute("SELECT m.entry_id,a.id,a.name FROM relay_members m JOIN athletes a ON a.id=m.athlete_id JOIN entries x ON x.id=m.entry_id WHERE x.event_id=? ORDER BY m.leg", (eid,)):
+            mm.setdefault(r['entry_id'], []).append(dict(id=r['id'], name=r['name']))
+        for r in rows_sorted:
+            r['member_list'] = mm.get(r['id'], [])
     return jsonify(event=ev_dict(ev), entries=rows_sorted, heats=heats,
                    points_table=ev_dict(ev)['points_list'] or (S['points_relay'] if ev['kind'] == 'relay' else S['points_individual']))
 
@@ -931,6 +1008,7 @@ def event_update(eid):
     d.execute("UPDATE events SET %s WHERE id=?" % ','.join(c + '=?' for c in EV_COLS.split(',')), b + (eid,))
     if old and old['start_time'] != b[4]:
         set_event_start(d, old, b[4])
+    ev_extras(d, eid, request.get_json() or {})
     log('改项目', b[0])
     d.commit()
     return jsonify(ok=True)
@@ -960,6 +1038,70 @@ def event_delete(eid):
     return jsonify(ok=True)
 
 
+# ----------------------------------------------------------------- 接力队员
+def _relay_entry(d, xid):
+    e = d.execute("SELECT * FROM entries WHERE id=?", (xid,)).fetchone()
+    if not e or not e['team_id']:
+        return None, None
+    return e, d.execute("SELECT * FROM events WHERE id=?", (e['event_id'],)).fetchone()
+
+
+@app.get('/api/entries/<int:xid>/relay')
+@need('admin')
+def relay_get(xid):
+    d = db()
+    e, ev = _relay_entry(d, xid)
+    if not e:
+        return jsonify(error='不是接力队'), 404
+    S = settings()
+    tids = descendants(d, e['team_id'])
+    taken = {r['athlete_id']: r['entry_id'] for r in d.execute(
+        "SELECT athlete_id,entry_id FROM relay_members WHERE entry_id IN (SELECT id FROM entries WHERE event_id=? AND id!=?)", (ev['id'], xid))}
+    cand = {r[0] for r in d.execute("SELECT athlete_id FROM relay_cand WHERE event_id=?", (ev['id'],))}
+    cur = [r['athlete_id'] for r in d.execute("SELECT athlete_id FROM relay_members WHERE entry_id=? ORDER BY leg", (xid,))]
+    ath = []
+    for a in d.execute("SELECT id,name,gender,bib,grade FROM athletes WHERE team_id IN (%s) ORDER BY name" % ','.join(str(int(t)) for t in tids)):
+        a = dict(a)
+        a.update(cand=a['id'] in cand, taken=a['id'] in taken, gender_ok=ev['gender'] not in ('M', 'F') or a['gender'] == ev['gender'],
+                 same_grade=bool(ev['grp']) and a['grade'] == ev['grp'])
+        ath.append(a)
+    team = d.execute("SELECT name FROM teams WHERE id=?", (e['team_id'],)).fetchone()
+    return jsonify(event=evl(ev['name'], ev['grp']), team=team['name'] if team else '', size=int(S['relay_size']), current=cur, athletes=ath)
+
+
+@app.put('/api/entries/<int:xid>/relay')
+@need('admin')
+def relay_set(xid):
+    p = request.get_json() or {}
+    d = db()
+    e, ev = _relay_entry(d, xid)
+    if not e:
+        return jsonify(error='不是接力队'), 404
+    ids = [int(i) for i in p.get('athlete_ids', [])]
+    size = int(settings()['relay_size'])
+    if len(set(ids)) != len(ids):
+        raise ValueError('队员有重复')
+    if len(ids) > size and not p.get('force'):
+        raise ValueError('每队最多 %d 人(可在设置里调整)' % size)
+    tids = descendants(d, e['team_id'])
+    names = []
+    for aid in ids:
+        a = d.execute("SELECT * FROM athletes WHERE id=?", (aid,)).fetchone()
+        if not a:
+            raise ValueError('人员不存在')
+        if a['team_id'] not in tids:
+            raise ValueError('%s 不属于该队伍' % a['name'])
+        if d.execute("SELECT 1 FROM relay_members m JOIN entries x ON x.id=m.entry_id WHERE x.event_id=? AND x.id!=? AND m.athlete_id=?", (ev['id'], xid, aid)).fetchone():
+            raise ValueError('%s 已在本项目的其他接力队中' % a['name'])
+        names.append(a['name'])
+    d.execute("DELETE FROM relay_members WHERE entry_id=?", (xid,))
+    d.executemany("INSERT INTO relay_members(entry_id,athlete_id,leg) VALUES(?,?,?)", [(xid, a, i + 1) for i, a in enumerate(ids)])
+    d.execute("UPDATE entries SET members=? WHERE id=?", ('、'.join(names), xid))
+    log('接力队员', '%s %s' % (evl(ev['name'], ev['grp']), '、'.join(names)))
+    d.commit()
+    return jsonify(members='、'.join(names), count=len(ids), size=size)
+
+
 # ----------------------------------------------------------------- 项目批量管理
 TFMT = '%Y-%m-%d %H:%M'
 
@@ -981,7 +1123,7 @@ def set_event_start(d, ev, new):
             ht = _dt(h['start_time'])
             if ht:
                 d.execute("UPDATE heats SET start_time=? WHERE id=?", ((ht + delta).strftime(TFMT), h['id']))
-    elif new_t and ev['kind'] != 'field':
+    elif new_t and ev['kind'] not in FIELDISH:
         gap = int(settings()['heat_gap'])
         for k, h in enumerate(heats):
             d.execute("UPDATE heats SET start_time=? WHERE id=?", ((new_t + timedelta(minutes=k * gap)).strftime(TFMT), h['id']))
@@ -1020,6 +1162,15 @@ def events_bulk_update():
         if f.get('status') in ('scheduled', 'running', 'done'):
             sets.append('status=?')
             args.append(f['status'])
+        if f.get('kind') in KINDS:
+            sets.append('kind=?')
+            args.append(f['kind'])
+        if 'unit' in f:
+            sets.append('unit=?')
+            args.append((f['unit'] or '').strip() or None)
+        if 'in_limit' in f and f['in_limit'] in (0, 1, '0', '1'):
+            sets.append('in_limit=?')
+            args.append(int(f['in_limit']))
         if f.get('gender') in ('M', 'F', 'X'):
             sets.append('gender=?')
             args.append(f['gender'])
@@ -1062,7 +1213,7 @@ def events_bulk_heats():
             continue
         n = make_heats(d, ev, S, p.get('mode', 'random'), p.get('lanes'), p.get('gap'))
         if n is None:
-            skipped.append(ev['name'] + (ev['grp'] or ''))
+            skipped.append(evl(ev['name'], ev['grp']))
         else:
             ok += 1
     d.commit()
@@ -1121,8 +1272,8 @@ def entries_add(eid):
         if ev['gender'] in ('M', 'F') and a['gender'] != ev['gender'] and not force:
             warns.append('%s 性别与项目不符' % a['name'])
             continue
-        cnt = d.execute("SELECT COUNT(*) FROM entries WHERE athlete_id=?", (aid,)).fetchone()[0]
-        if cnt >= S['max_events'] and not force:
+        cnt = limit_count(d, aid)
+        if ev['in_limit'] and cnt >= S['max_events'] and not force:
             warns.append('%s 已报 %d 项(上限 %d)' % (a['name'], cnt, S['max_events']))
             continue
         try:
@@ -1193,7 +1344,7 @@ def make_heats(d, ev, S, mode='random', lanes=None, gap=None):
         return None
     d.execute("UPDATE entries SET heat_id=NULL, lane=NULL WHERE event_id=?", (eid,))
     d.execute("DELETE FROM heats WHERE event_id=?", (eid,))
-    asc = ev['kind'] != 'field'
+    asc = ev['kind'] not in FIELDISH
     if mode == 'seed':   # 按报名成绩:差 → 好
         # 无报名成绩者视为最差;asc(越小越好)时最差在前,field(越大越好)时最差在前
         ents.sort(key=(lambda r: -(r['seed'] if r['seed'] is not None else 1e9)) if asc
@@ -1207,7 +1358,7 @@ def make_heats(d, ev, S, mode='random', lanes=None, gap=None):
         except ValueError:
             t0 = None
     groups = []
-    if ev['kind'] == 'field':
+    if ev['kind'] in FIELDISH:
         groups = [ents]
     else:
         n = len(ents)
@@ -1220,13 +1371,13 @@ def make_heats(d, ev, S, mode='random', lanes=None, gap=None):
             pos += size
     prio = lane_priority(L)
     for gi, g_ in enumerate(groups):
-        name = '全体' if ev['kind'] == 'field' else ('决赛' if len(groups) == 1 else '第%d组' % (gi + 1))
-        st = (t0 + timedelta(minutes=gi * gap)).strftime('%Y-%m-%d %H:%M') if (t0 and ev['kind'] != 'field') else None
+        name = '全体' if ev['kind'] in FIELDISH else ('决赛' if len(groups) == 1 else '第%d组' % (gi + 1))
+        st = (t0 + timedelta(minutes=gi * gap)).strftime('%Y-%m-%d %H:%M') if (t0 and ev['kind'] not in FIELDISH) else None
         hid = d.execute("INSERT INTO heats(event_id,name,start_time,sort) VALUES(?,?,?,?)", (eid, name, st, gi)).lastrowid
-        if ev['kind'] != 'field' and mode == 'seed':
+        if ev['kind'] not in FIELDISH and mode == 'seed':
             g_ = list(reversed(g_))  # 组内成绩最好者排在最前,占据最佳跑道
         for k, e in enumerate(g_):
-            lane = (k + 1) if ev['kind'] == 'field' else prio[k]
+            lane = (k + 1) if ev['kind'] in FIELDISH else prio[k]
             d.execute("UPDATE entries SET heat_id=?, lane=? WHERE id=?", (hid, lane, e['id']))
     log('生成分组', '%s %d 组' % (ev['name'], len(groups)))
     return len(groups)
@@ -1326,7 +1477,7 @@ def board():
                 tm[r['tid']]['part'] += r['part']
                 tm[r['tid']]['bonus'] += r['bonus']
                 if r['total']:
-                    breakdown.append(dict(team_id=r['tid'], event_id=ev['id'], event=ev['name'] + (ev['grp'] or ''),
+                    breakdown.append(dict(team_id=r['tid'], event_id=ev['id'], event=evl(ev['name'], ev['grp']),
                                           who=r['athlete_name'] or r['label'] or r['team_name'], rank=r['rank'],
                                           value=r['value_text'], points=fmt_pts(r['points']), part=fmt_pts(r['part']),
                                           bonus=fmt_pts(r['bonus'])))
@@ -1381,7 +1532,7 @@ def find_conflicts(d):
             s = datetime.strptime(r['start_time'], '%Y-%m-%d %H:%M')
         except ValueError:
             continue
-        evs[r['id']] = (s, s + timedelta(minutes=r['duration'] or 20), r['name'] + (r['grp'] or ''))
+        evs[r['id']] = (s, s + timedelta(minutes=r['duration'] or 20), evl(r['name'], r['grp']))
     by_ath = {}
     for r in d.execute("""SELECT e.athlete_id, e.event_id, a.name, a.bib, t.name AS team FROM entries e
                           JOIN athletes a ON a.id=e.athlete_id LEFT JOIN teams t ON t.id=a.team_id
@@ -1525,7 +1676,7 @@ def rec_auto():
             n += 1
             u = '%s_%d' % (base, n)
         pw = _gen_pw()
-        label = e['name'] + (e['grp'] or '')
+        label = evl(e['name'], e['grp'])
         rid = d.execute("INSERT INTO recorders(username,name,pw) VALUES(?,?,?)", (u, label, hash_pw(pw))).lastrowid
         _set_rec_events(d, rid, [e['id']])
         out.append(dict(username=u, password=pw, name=label))
@@ -1639,11 +1790,11 @@ def demo():
         for name, kind, dur in PRESETS:
             cur = d.execute("INSERT INTO events(%s) VALUES(%s)" % (EV_COLS, ','.join('?' * 15)),
                             (('男子' if g_ == 'M' else '女子') + name, kind, g_, None, t.strftime('%Y-%m-%d %H:%M'), dur,
-                             '田径场' if kind != 'field' else '沙坑/投掷区', 8, 'scheduled', 1, None,
+                             '田径场' if kind not in FIELDISH else '沙坑/投掷区', 8, 'scheduled', 1, None,
                              {'100米': 12.5, '跳远': 5.2}.get(name) if g_ == 'M' and name in ('100米', '跳远') else None,
                              '2019 届 张明' if g_ == 'M' and name in ('100米', '跳远') else None, None, None))
             eids.append((cur.lastrowid, kind, g_, name))
-            t += timedelta(minutes=dur if kind != 'field' else 15)
+            t += timedelta(minutes=dur if kind not in FIELDISH else 15)
     d.commit()
     ath = {g_: [r['id'] for r in d.execute("SELECT id FROM athletes WHERE gender=?", (g_,))] for g_ in ('M', 'F')}
     for eid, kind, g_, name in eids:
